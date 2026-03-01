@@ -5,90 +5,91 @@
 | 标题 | 新增拦截A5 PA场景不支持query dtype为int8 |
 | 作者 | yangxh1203 |
 | 链接 | [https://gitcode.com/cann/ops-transformer/merge_requests/2161](https://gitcode.com/cann/ops-transformer/merge_requests/2161) |
-| 审查时间 | 2026-03-01 15:38:19 |
-| 审查工具 | Claude Code (`codereview` skill) |
-| 基线提交 | 97684e0e5a81 |
+| 审查时间 | 2026-03-01 16:27:36 |
+| 审查工具 | Claude Code (`vibe-review` skill) |
+| 基线提交 | 4d2e750ad865 |
+| 发现 | 严重0 / 一般1 / 建议2 |
 
 ---
 
 ## 变更概述
 
-本PR在PromptFlashAttention V2 tiling中新增了PA(PagedAttention)场景下query dtype为INT8的拦截检查,与V1 tiling(A3)的行为保持一致。同时对`CheckPerTensorQuantParams`函数中3处错误消息的首字母进行了大写修正。
+本MR为PromptFlashAttention算子新增PA场景下query dtype为INT8的拦截检查，使A5平台行为与A3保持一致。同时修改了3处错误消息的首字母大写。
 
-变更内容：
-- `SetAttributeInfo`的PA check块中新增`inputType == ge::DT_INT8`的拦截（+2行）
-- `CheckPerTensorQuantParams`中3条错误消息的首个参数名首字母改为大写（3处文本替换）
+- prompt_flash_attention_tiling_v2.cpp: 在`SetAttributeInfo`的PA check块中新增INT8拦截；修改3处错误消息字符串首字母大写
 
-调用顺序验证：`CheckIO`(line 4327)在`SetAttributeInfo`(line 4896)之前调用,`CheckIO`内部通过`CheckIODataType`初始化了`inputType = contextKeyParams.inputDataType`,因此新增检查处的`inputType`已正确初始化。
-
----
+涉及1个文件，6行新增/3行修改。
 
 ## 审查发现
 
-### 发现 1：错误消息部分大写导致同一句内命名不一致
+共发现3个问题（严重0 / 一般1 / 建议2）
 
-- 位置：`prompt_flash_attention_tiling_v2.cpp:996, 1002`
-- 规则：错误消息一致性
-- 置信度：高
-- 问题代码：
+---
+
+### #1 [一般] 错误消息中参数名大小写不一致
+- 位置：`attention/prompt_flash_attention/op_host/prompt_flash_attention_tiling_v2.cpp:996, 1002`
+- 规则：1.3.x (注释/消息一致性)
+- 置信度：确定
+
+问题代码：
 ```cpp
-"DeqScale1, quantScale1 or deqScale2 is nullptr in per-tensor quant scenario."
+"DeqScale1, quantScale1 or deqScale2 is nullptr in per-tensor quant scenario."),
 ```
 ```cpp
-"DeqScale1, quantScale1 or deqScale2 is empty tensor in per-tensor quant scenario."
-```
-- 分析：同一条错误消息中列举了3个参数名,但只将第一个`deqScale1`首字母大写为`DeqScale1`,后面的`quantScale1`和`deqScale2`仍保持小写。这导致同一句内命名风格不一致。要么全部大写首字母,要么保持原样全部小写（因为它们是代码变量名/参数名,小写更贴近实际命名）。
-- 修复建议：统一风格,建议三个参数名保持一致：
-```cpp
-"DeqScale1, QuantScale1 or DeqScale2 is nullptr in per-tensor quant scenario."
-```
-或还原为全部小写:
-```cpp
-"deqScale1, quantScale1 or deqScale2 is nullptr in per-tensor quant scenario."
+"DeqScale1, quantScale1 or deqScale2 is empty tensor in per-tensor quant scenario."),
 ```
 
-### 发现 2：新增INT8拦截的错误消息与V1 tiling不一致
+同一消息中列举了三个参数名，但只对第一个`DeqScale1`做了首字母大写，`quantScale1`和`deqScale2`仍保持原样。这既不是句首大写（那只需要第一个词大写，而这些是参数名不是普通英文词），也不是统一大写参数名首字母（那三个都该改）。结果是同一字符串内风格自相矛盾，看上去像漏改。
 
-- 位置：`prompt_flash_attention_tiling_v2.cpp:4279`
-- 规则：跨模块消息一致性
-- 置信度：高
-- 问题代码：
+修复建议：三个参数名保持统一风格。若目的是句首大写，则只改第一个即可（现状没问题）；若目的是参数名首字母统一大写，则三个都改：
 ```cpp
-"Query dataType can't be INT8 when PA enable."
+"DeqScale1, QuantScale1 or DeqScale2 is nullptr in per-tensor quant scenario."),
 ```
-- 分析：PR描述明确要求"应与A3保持一致"。V1 tiling(`prompt_flash_attention_tiling.cpp:3908`)中同功能的错误消息为`"Query DataType can't be INT8 when PA enable"`（`DataType`大写D大写T,无句末句号）。而V2新增的消息为`"Query dataType can't be INT8 when PA enable."`（小写d大写T,有句末句号），两处不一致。
-- 修复建议：与V1保持一致：
 ```cpp
-"Query DataType can't be INT8 when PA enable"
+"DeqScale1, QuantScale1 or DeqScale2 is empty tensor in per-tensor quant scenario."),
 ```
 
-### 发现 3：新增检查的代码格式不符合上下文风格
+---
 
-- 位置：`prompt_flash_attention_tiling_v2.cpp:4279-4280`
-- 规则：代码格式一致性
-- 置信度：中
-- 问题代码：
+### #2 [建议] 错误消息与变量名不一致
+- 位置：`attention/prompt_flash_attention/op_host/prompt_flash_attention_tiling_v2.cpp:984`
+- 规则：1.3.x
+- 置信度：确定（已通过Read确认变量名定义于第962行为`inputParamsType`）
+
+问题代码：
 ```cpp
-        OP_CHECK_IF(inputType == ge::DT_INT8, OPS_REPORT_VECTOR_INNER_ERR(contextKeyParams.opName, "Query dataType can't be INT8 when PA enable."),
-            return ge::GRAPH_FAILED);
+"InputParamsType must be INT8 in per-tensor quant scenario, now is %s",
 ```
-- 分析：同一PA check块内的上方`blockSize`检查采用了三行展开格式（条件、报错信息、返回值各占一行或有适当换行），而新增的INT8检查将条件和报错信息压缩到同一行，导致单行过长且与相邻代码风格不统一。参考V1 tiling中的写法和上方`blockSize`检查的格式,应使用一致的多行展开。
-- 修复建议：
+
+第962行定义的变量名为`inputParamsType`（小写`i`），修改后错误消息变为`"InputParamsType"`（大写`I`）。原始消息`"inputParamsType"`与变量名完全一致，修改后反而产生了不匹配。开发者根据错误日志在代码中搜索`InputParamsType`将无法命中。
+
+修复建议：保持消息中的名称与变量名一致，或改用更具描述性的文本：
 ```cpp
-        OP_CHECK_IF(inputType == ge::DT_INT8,
-            OPS_REPORT_VECTOR_INNER_ERR(contextKeyParams.opName,
-            "Query DataType can't be INT8 when PA enable"),
-            return ge::GRAPH_FAILED);
+"inputParamsType must be INT8 in per-tensor quant scenario, now is %s",
+```
+
+---
+
+### #3 [建议] 新增错误消息与相邻消息标点不一致
+- 位置：`attention/prompt_flash_attention/op_host/prompt_flash_attention_tiling_v2.cpp:4280`
+- 规则：1.3.x
+- 置信度：确定
+
+问题代码：
+```cpp
+"Query dataType can't be INT8 when PA enable."),
+```
+
+新增消息末尾有句点（`enable.`），而紧邻上方第4277行的消息无句点（`"blockSize can't be null when PA enable"`）。同一代码块内的错误消息标点风格应统一。
+
+修复建议：与相邻消息保持一致，去掉句点：
+```cpp
+"Query dataType can't be INT8 when PA enable"),
 ```
 
 ---
 
 ## 总结
 
-核心逻辑正确：PA场景下拦截query dtype为INT8的检查位置合理,`inputType`在此处已被正确初始化,检查时机在`enablePA = true`之前。
-
-主要问题集中在消息文本的一致性上：
-1. 发现1和发现2属于同类问题——错误消息命名风格不统一。发现1是同一句内不一致,发现2是跨V1/V2的同功能消息不一致,与PR"应与A3保持一致"的目标矛盾。
-2. 发现3是格式问题,建议对齐。
-
-建议修复后合入。
+新增的INT8拦截逻辑本身正确——在PA check块中、`enablePA = true`之前拦截，检查字段`inputDataType`即query的dtype，与仓库中其他INT8检查（如第2114、4140行）使用同一字段，语义一致。
+问题集中在错误消息文本的一致性上：同一消息内参数名大小写不统一（#1）、消息文本与变量名不匹配（#2）、标点风格不一致（#3）。建议在合入前统一处理。
