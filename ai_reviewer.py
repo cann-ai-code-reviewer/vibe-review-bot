@@ -1261,7 +1261,7 @@ def _run_claude(prompt: str, cwd: Path, max_retries: int = 2, allowed_tools: lis
     env["CLAUDE_CODE_OUTPUT_STYLE"] = ""
     stats = ReviewStats()
     for attempt in range(1, max_retries + 1):
-        cmd = ["claude", "-p", "--output-format", "json"]
+        cmd = ["claude", "-p", "--output-format", "json", "--model", "claude-opus-4-6"]
         if allowed_tools:
             for tool in allowed_tools:
                 cmd.extend(["--allowedTools", tool])
