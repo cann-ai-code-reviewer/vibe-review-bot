@@ -2,7 +2,7 @@
 
 [CANN](https://gitcode.com/cann)代码仓（GitCode平台）的自动化检视机器人。
 
-CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具（cppcheck、clang-tidy）能覆盖的问题类型有限。本工具通过Claude Code配合自定义的[codereview skill](skill/codereview)，在审查PR diff时同时读取上下文代码（不只看diff本身），并将检视意见发布为GitCode PR评论。
+CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具（cppcheck、clang-tidy）能覆盖的问题类型有限。本工具通过Claude Code配合自定义的[vibe-review skill](skill/codereview)，在审查PR diff时同时读取上下文代码（不只看diff本身），并将检视意见发布为GitCode PR评论。
 
 维护者：@tsukiyokai <br>
 Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
@@ -13,16 +13,16 @@ Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
                          review_loop.sh (poll 60s)
                                   |
                                   v
-+-----------+   GitCode API   +----------------+   claude -p   +------------------+
-|           | --------------> |                | ------------> |                  |
-| GitCode   |   fetch diff    | ai_reviewer.py | invoke skill  | Claude Code      |
-| PR / Push |                 |                | <------------ | codereview skill |
-|           |                 +----------------+    report     +------------------+
-+-----------+                    |    |    |                       |
-                                 |    |    |                  read context
-                                 v    v    v                      |
-                             terminal log/ GitCode           local repo
-                              stdout  save PR comment      ~/repo/cann/*
++-----------+   GitCode API   +----------------+   claude -p   +-------------------+
+|           | --------------> |                | ------------> |                   |
+| GitCode   |   fetch diff    | ai_reviewer.py | invoke skill  | Claude Code       |
+| PR / Push |                 |                | <------------ | vibe-review skill |
+|           |                 +----------------+    report     +-------------------+
++-----------+                    |    |    |                        |
+                                 |    |    |                   read context
+                                 v    v    v                       |
+                             terminal log/ GitCode            local repo
+                              stdout  save PR comment       ~/repo/cann/*
 ```
 
 `review_loop.sh`通过对比HEAD SHA判断变更，无变化时仅消耗1次API调用。
@@ -36,7 +36,7 @@ Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 git clone https://github.com/tsukiyokai/vibereview.git
 cd vibereview
 
-# 2. 安装codereview skill（软链接到Claude Code的skills目录）
+# 2. 安装vibe-review skill（软链接到Claude Code的skills目录）
 bash setup.sh
 
 # 3. 设置GitCode个人访问令牌
@@ -101,7 +101,7 @@ python3 ai_reviewer.py --import-logs         # 导入历史审查日志到追踪
 ai_reviewer.py           # 核心：GitCode API、diff拉取、Claude调用、评论发布
 review_loop.sh           # 轮询守护脚本
 team.txt                 # 团队成员名单（姓名 工号 GitCode账号）
-skill/codereview/        # Claude Code codereview skill（软链接）
+skill/codereview/        # vibe-review skill 源文件
 doc/best_practice.md     # 踩坑记录与部署经验
 log/                     # 检视产出，按仓库和维度组织：
   └── cann/
@@ -155,9 +155,9 @@ log/                     # 检视产出，按仓库和维度组织：
 
 已完成：
 
-- [x] 创建codereview skill，基于CANN C++编码规范
+- [x] 创建vibe-review skill，基于CANN C++编码规范
 - [x] 通过GitCode API自动拉取PR diff
-- [x] 调用Claude Code codereview skill进行审查
+- [x] 调用Claude Code vibe-review skill进行审查
 - [x] 审查指定PR（--pr）
 - [x] 按作者筛选PR（--author）
 - [x] 审查结果发布为GitCode PR评论（--comment）
@@ -191,7 +191,7 @@ log/                     # 检视产出，按仓库和维度组织：
 - [x] 行号范围格式统一（199-201）
 - [x] log目录按项目/仓库分层（log/cann/\<repo\>/）
 - [x] 支持多个CANN仓库（hcomm、ops-transformer）
-- [x] codereview skill重构（渐进式加载、分层规范）
+- [x] vibe-review skill重构（渐进式加载、分层规范）
 - [x] GitHub托管与README
 
 待做：
@@ -211,14 +211,14 @@ log/                     # 检视产出，按仓库和维度组织：
 3. 提PR，写清楚改了什么、为什么改
 4. 维护者review后merge
 
-适合上手的贡献：总结误报经验反馈并闭环到skill、按最佳实践优化codereview skill的prompt、修复你碰到的bug。
+适合上手的贡献：总结误报经验反馈并闭环到skill、按最佳实践优化vibe-review skill的prompt、修复你碰到的bug。
 
 沟通约定：日常问题在Slack交流；决策和TODO变更落到GitHub。
 
 ## 延伸阅读
 
 - [doc/best_practice.md](doc/best_practice.md) — AI检视在HCCL的部署经验与踩坑
-- [Claude Code skills](https://docs.anthropic.com/en/docs/claude-code) — codereview skill的工作原理
+- [Claude Code skills](https://docs.anthropic.com/en/docs/claude-code) — vibe-review skill的工作原理
 - [GitCode API](https://gitcode.com/docs/openapi) — PR拉取和评论发布所用的API
 
 ## 许可
