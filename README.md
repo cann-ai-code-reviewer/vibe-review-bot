@@ -2,7 +2,7 @@
 
 [CANN](https://gitcode.com/cann)代码仓（GitCode平台）的自动化检视机器人。
 
-CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具（cppcheck、clang-tidy）能覆盖的问题类型有限。本工具通过Claude Code配合自定义的[vibe-review skill](skill/codereview)，在审查PR diff时同时读取上下文代码（不只看diff本身），并将检视意见发布为GitCode PR评论。
+CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具（cppcheck、clang-tidy）能覆盖的问题类型有限。本工具通过Claude Code配合自定义的[vibe-review skill](skill/vibe-review)，在审查PR diff时同时读取上下文代码（不只看diff本身），并将检视意见发布为GitCode PR评论。
 
 维护者：@tsukiyokai <br>
 Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
@@ -101,7 +101,7 @@ python3 ai_reviewer.py --import-logs         # 导入历史审查日志到追踪
 ai_reviewer.py           # 核心：GitCode API、diff拉取、Claude调用、评论发布
 review_loop.sh           # 轮询守护脚本
 team.txt                 # 团队成员名单（姓名 工号 GitCode账号）
-skill/codereview/        # vibe-review skill 源文件
+skill/vibe-review/        # vibe-review skill 源文件
 doc/best_practice.md     # 踩坑记录与部署经验
 log/                     # 检视产出，按仓库和维度组织：
   └── cann/
@@ -123,9 +123,9 @@ log/                     # 检视产出，按仓库和维度组织：
 
 ## 开发历程
 
-> 2026年2月，从手动review到全自动检视机器人，17天迭代。
+> 2026年2-3月，从手动review到全自动检视机器人。
 
-2/12 — 起步：创建codereview skill，基于CANN C++编码规范。手动curl下载PR diff，手动调用skill审查。
+2/12 — 起步：创建vibe-review skill，基于CANN C++编码规范。手动curl下载PR diff，手动调用skill审查。
 
 2/13 — 探索输出形式：确定markdown为标准输出格式。
 
@@ -147,7 +147,9 @@ log/                     # 检视产出，按仓库和维度组织：
 
 2/27 — 追踪统计：实现--stats采纳率统计、--track检视意见追踪、--import-logs历史数据导入。行号统一为范围格式（199-201）。log目录重构为log/cann/\<repo\>/层级。扩展支持ops-transformer仓库。轮询脚本失败恢复修复。
 
-2/28 — 开源与重构：codereview skill重构（渐进式加载、分层规范文件）。项目托管到GitHub，编写README。
+2/28 — 开源与重构：vibe-review skill重构（渐进式加载、分层规范文件）。项目托管到GitHub，编写README。
+
+3/1 — 品牌重塑：项目从ai_code_review重命名为vibereview，skill从codereview重命名为vibe-review。skill内容纳入仓库版本管理（替换符号链接），添加setup.sh一键安装。
 
 ## TODO
 
@@ -193,6 +195,8 @@ log/                     # 检视产出，按仓库和维度组织：
 - [x] 支持多个CANN仓库（hcomm、ops-transformer）
 - [x] vibe-review skill重构（渐进式加载、分层规范）
 - [x] GitHub托管与README
+- [x] 项目重命名为vibereview，skill重命名为vibe-review
+- [x] skill内容纳入仓库版本管理，添加setup.sh一键安装
 
 待做：
 

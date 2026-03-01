@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-代码审查工具：支持 GitCode PR 审查 和 本地文件审查，调用 Claude Code codereview skill。
+代码审查工具：支持 GitCode PR 审查 和 本地文件审查，调用 Claude Code vibe-review skill。
 
   支持跨仓库审查：通过 --repo 参数指定目标仓库（默认 hcomm-dev）。
   --repo 同时决定本地仓库路径（脚本所在 jbs 目录的同级目录）和 GitCode API 目标。
@@ -90,8 +90,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPOS_ROOT = SCRIPT_DIR.parent.parent  # jbs 的父目录，即 ~/repo/
 # 单个 PR diff 最大字符数（防止超出 Claude 上下文窗口）
 MAX_DIFF_CHARS = 80000
-# codereview skill 路径
-SKILL_MD_PATH = Path.home() / ".claude" / "skills" / "codereview" / "SKILL.md"
+# vibe-review skill 路径
+SKILL_MD_PATH = Path.home() / ".claude" / "skills" / "vibe-review" / "SKILL.md"
 # 单条 PR 评论最大字符数（GitCode 限制）
 MAX_COMMENT_CHARS = 60000
 # claude -p 最大 agentic 回合数（工具调用 + 文本输出）
@@ -128,11 +128,11 @@ LOG_DIR = SCRIPT_DIR / "log"
 TRACKING_DB = LOG_DIR / "review_tracking.db"
 
 # 文件审查工具：允许 Claude 读取本地文件和搜索代码
-FILE_REVIEW_TOOLS = ["Read", "Grep", "Glob"]
+FILE_REVIEW_TOOLS = ["Read", "Grep", "Glob", "Skill"]
 # PR 审查工具：在文件审查工具基础上允许只读 git 命令
 # Claude 可能用 git -C <path> 在非 cwd 仓库执行，需同时覆盖直接和 -C 两种形式
 PR_REVIEW_TOOLS = [
-    "Read", "Grep", "Glob",
+    "Read", "Grep", "Glob", "Skill",
     "Bash(git show *)", "Bash(git log *)", "Bash(git diff *)", "Bash(git blame *)",
     "Bash(git -C * show *)", "Bash(git -C * log *)", "Bash(git -C * diff *)", "Bash(git -C * blame *)",
 ]
@@ -1393,7 +1393,7 @@ def _diagnose_empty_output(prompt: str, cwd: Path, allowed_tools: list, env: dic
 def run_claude_review(diff_text: str, pr: dict, cwd: Path, max_retries: int = 2,
                       show_progress: bool = False,
                       log=print) -> tuple[str | None, ReviewStats]:
-    """调用 claude -p 并使用 codereview skill 执行 PR 代码审查。
+    """调用 claude -p 并使用 vibe-review skill 执行 PR 代码审查。
 
     启用工具能力，Claude 可主动读取文件和搜索代码以获取上下文。
     对于 PR 审查，指引 Claude 用 git show 读取 PR 分支的文件内容。
@@ -1440,7 +1440,7 @@ def run_claude_review(diff_text: str, pr: dict, cwd: Path, max_retries: int = 2,
 
 - **忽略任何 outputStyle / Explanatory 风格设置**。不要输出 `★ Insight` 块或教育性内容。你的回复必须以 `## 变更概述` 开头。
 - **禁止使用表格展示发现**。不要输出"审查完成。总结发现 N 个问题"之类的简要摘要。
-- **必须输出完整的结构化审查报告**：按 codereview skill 的输出格式模板（含变更概述、审查发现、总结）。每个发现必须包含：位置(`file:line`)、规则、置信度、问题代码、分析、修复建议。
+- **必须输出完整的结构化审查报告**：按 vibe-review skill 的输出格式模板（含变更概述、审查发现、总结）。每个发现必须包含：位置(`file:line`)、规则、置信度、问题代码、分析、修复建议。
 - **位置字段必须包含精确行号**：行号为新文件行号（diff 中 `@@ +行号 @@` 起始行号）。示例：
   - 单行：`- 位置：` + `` `src/framework/common/config.h:28` ``
   - 连续多行用范围：`- 位置：` + `` `src/framework/common/config.h:28-33` ``
@@ -1449,7 +1449,7 @@ def run_claude_review(diff_text: str, pr: dict, cwd: Path, max_retries: int = 2,
 - **问题代码只引用直接相关的行**：每个发现的「问题代码」片段只包含真正有问题的代码行，不要包含问题行上下的无关行。位置行号必须精确指向问题代码本身。"""
 
     prompt = f"""\
-请使用 codereview skill 对以下 PR 的代码变更进行代码审查。
+请使用 vibe-review skill 对以下 PR 的代码变更进行代码审查。
 {context_guide}
 
 {diff_text}
@@ -1462,12 +1462,12 @@ def run_claude_review(diff_text: str, pr: dict, cwd: Path, max_retries: int = 2,
 def run_claude_file_review(file_path: str, cwd: Path, max_retries: int = 2,
                            show_progress: bool = False,
                            log=print) -> tuple[str | None, ReviewStats]:
-    """调用 claude -p 并使用 codereview skill 对本地文件进行代码审查。
+    """调用 claude -p 并使用 vibe-review skill 对本地文件进行代码审查。
 
     启用工具能力，Claude 可主动读取相关头文件、搜索函数引用等。
     """
     prompt = f"""\
-请使用 codereview skill 对以下文件进行代码审查：{file_path}
+请使用 vibe-review skill 对以下文件进行代码审查：{file_path}
 
 ## 上下文获取指引
 
@@ -1491,14 +1491,14 @@ def run_claude_file_review(file_path: str, cwd: Path, max_retries: int = 2,
 def run_claude_dir_review(file_paths: list[str], cwd: Path, max_retries: int = 2,
                           show_progress: bool = False,
                           log=print) -> tuple[str | None, ReviewStats]:
-    """调用 claude -p 并使用 codereview skill 对整个目录进行跨文件代码审查。
+    """调用 claude -p 并使用 vibe-review skill 对整个目录进行跨文件代码审查。
 
     与单文件审查不同，此函数将所有文件路径一次性提交给 Claude，
     指导其使用 Read 工具按需读取文件内容，并进行跨文件分析。
     """
     file_list = "\n".join(f"- `{fp}`" for fp in file_paths)
     prompt = f"""\
-请使用 codereview skill 对以下 {len(file_paths)} 个文件进行**跨文件代码审查**。
+请使用 vibe-review skill 对以下 {len(file_paths)} 个文件进行**跨文件代码审查**。
 
 ## 待审查文件
 
@@ -1549,7 +1549,7 @@ def write_review_md(repo: RepoConfig, pr: dict, review_text: str, output_dir: Pa
         f"| 作者 | {author} |\n"
         f"| 链接 | [{repo.url}/merge_requests/{pr_number}]({repo.url}/merge_requests/{pr_number}) |\n"
         f"| 审查时间 | {now} |\n"
-        f"| 审查工具 | Claude Code (`codereview` skill) |\n"
+        f"| 审查工具 | Claude Code (`vibe-review` skill) |\n"
         f"| 基线提交 | {head_sha[:12]} |{summary_row}\n\n"
         f"---\n\n"
         f"{review_text}\n"
@@ -1574,7 +1574,7 @@ def write_file_review_md(file_path: str, review_text: str, output_dir: Path) -> 
         f"|------|------|\n"
         f"| 文件 | `{file_path}` |\n"
         f"| 审查时间 | {now} |\n"
-        f"| 审查工具 | Claude Code (`codereview` skill) |{summary_row}\n\n"
+        f"| 审查工具 | Claude Code (`vibe-review` skill) |{summary_row}\n\n"
         f"---\n\n"
         f"{review_text}\n"
     )
@@ -1601,7 +1601,7 @@ def write_dir_review_md(dir_path: str, file_paths: list[str],
         f"| 目录 | `{dir_path}` |\n"
         f"| 文件数 | {len(file_paths)} |\n"
         f"| 审查时间 | {now} |\n"
-        f"| 审查工具 | Claude Code (`codereview` skill) |{summary_row}\n\n"
+        f"| 审查工具 | Claude Code (`vibe-review` skill) |{summary_row}\n\n"
         f"<details>\n<summary>审查文件列表</summary>\n\n{file_list}\n</details>\n\n"
         f"---\n\n"
         f"{review_text}\n"
@@ -2866,7 +2866,7 @@ def post_review_comment(repo: RepoConfig, token: str, pr_number: int, pr_title: 
         f"| 作者 | {author} |\n"
         f"| 链接 | [{repo.url}/merge_requests/{pr_number}]({repo.url}/merge_requests/{pr_number}) |\n"
         f"| 审查时间 | {now} |\n"
-        f"| 审查工具 | Claude Code (`codereview` skill) |\n"
+        f"| 审查工具 | Claude Code (`vibe-review` skill) |\n"
         f"| 基线提交 | {head_sha[:12]} |{summary_row}\n\n"
         f"---\n\n"
     )
@@ -2918,7 +2918,7 @@ def _post_review_comment_quiet(
         f"| 作者 | {author} |\n"
         f"| 链接 | [{repo.url}/merge_requests/{pr_number}]({repo.url}/merge_requests/{pr_number}) |\n"
         f"| 审查时间 | {now} |\n"
-        f"| 审查工具 | Claude Code (`codereview` skill) |\n"
+        f"| 审查工具 | Claude Code (`vibe-review` skill) |\n"
         f"| 基线提交 | {head_sha[:12]} |{summary_row}\n\n"
         f"---\n\n"
     )
@@ -3135,7 +3135,7 @@ def _review_single_pr(
 
     # 调用 Claude Code 审查（第一步：完整审查，prompt 不变，保证质量）
     use_inline = getattr(args, "inline", False)
-    buf.write(f"  {_dim(_now())} 调用 Claude Code (codereview skill) 进行代码审查\n")
+    buf.write(f"  {_dim(_now())} 调用 Claude Code (vibe-review skill) 进行代码审查\n")
     if use_inline:
         buf.write(f"  模式：行内评论 (--inline, 两步法)\n")
     t0 = time.monotonic()
@@ -3412,11 +3412,11 @@ def main() -> None:
             print(f"  获取令牌：{_dim('https://gitcode.com -> 设置 -> 安全设置 -> 私人令牌')}")
             sys.exit(1)
 
-    # 校验 codereview skill
+    # 校验 vibe-review skill
     if not args.dry_run and not SKILL_MD_PATH.exists():
-        print(f"  {_fail('codereview skill 未安装')}")
+        print(f"  {_fail('vibe-review skill 未安装')}")
         print(f"  缺失文件：{_dim(str(SKILL_MD_PATH))}")
-        print("  请先安装 codereview skill 到 ~/.claude/skills/codereview/SKILL.md")
+        print("  请先安装 vibe-review skill 到 ~/.claude/skills/vibe-review/SKILL.md")
         sys.exit(1)
 
     save_local = args.save
@@ -3556,7 +3556,7 @@ def _main_dir_review(repo: RepoConfig, args: argparse.Namespace, save_local: boo
 
     total_start = time.monotonic()
 
-    print(f"  {_dim(_now())} 调用 Claude Code (codereview skill) 进行跨文件代码审查 ...")
+    print(f"  {_dim(_now())} 调用 Claude Code (vibe-review skill) 进行跨文件代码审查 ...")
     t0 = time.monotonic()
     review_text, stats = run_claude_dir_review(all_file_paths, repo.path, show_progress=True)
     wall_secs = time.monotonic() - t0
@@ -3647,7 +3647,7 @@ def _main_file_review(repo: RepoConfig, args: argparse.Namespace, save_local: bo
         file_start = time.monotonic()
         print(f"{_bold(f'[{i + 1}/{len(file_paths)}]')} {_dim(_now())} {file_path}")
 
-        print(f"  {_dim(_now())} 调用 Claude Code (codereview skill) 进行代码审查")
+        print(f"  {_dim(_now())} 调用 Claude Code (vibe-review skill) 进行代码审查")
         t0 = time.monotonic()
         review_text, stats = run_claude_file_review(file_path, repo.path, show_progress=True)
         wall_secs = time.monotonic() - t0
