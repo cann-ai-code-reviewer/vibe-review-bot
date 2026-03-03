@@ -33,8 +33,8 @@ Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/tsukiyokai/vibereview.git
-cd vibereview
+git clone https://github.com/tsukiyokai/vibe-review-bot.git
+cd vibe-review-bot
 
 # 2. 安装vibe-review skill
 npx @tsukiyokai/vibe-review --global
@@ -148,9 +148,9 @@ log/                     # 检视产出，按仓库和维度组织：
 
 2/28 — 开源与重构：vibe-review skill重构（渐进式加载、分层规范文件）。项目托管到GitHub，编写README。
 
-3/1 — 改名：项目从ai_code_review重命名为vibereview，skill从codereview重命名为vibe-review。skill内容纳入仓库版本管理（替换符号链接），添加setup.sh一键安装。
+3/1 — 改名：项目从ai_code_review重命名为vibe-review，skill从codereview重命名为vibe-review。skill内容纳入仓库版本管理（替换符号链接），添加setup.sh一键安装。
 
-3/3 — npm发包：vibe-review skill提取为独立项目[vibe-review-skill](https://github.com/tsukiyokai/vibe-review-skill)，发布到npm（[@tsukiyokai/vibe-review](https://www.npmjs.com/package/@tsukiyokai/vibe-review)）。用户通过`npx @tsukiyokai/vibe-review --global`一键安装。vibereview仓库不再包含skill源码，改为依赖npm包。
+3/3 — npm发包：vibe-review skill提取为独立项目[vibe-review-skill](https://github.com/tsukiyokai/vibe-review-skill)，发布到npm（[@tsukiyokai/vibe-review](https://www.npmjs.com/package/@tsukiyokai/vibe-review)）。用户通过`npx @tsukiyokai/vibe-review --global`一键安装。vibe-review-bot仓库不再包含skill源码，改为依赖npm包。
 
 ## TODO
 
@@ -194,7 +194,7 @@ log/                     # 检视产出，按仓库和维度组织：
 - [x] 支持多个CANN仓库（hcomm、ops-transformer）
 - [x] vibe-review skill重构（渐进式加载、分层规范）
 - [x] GitHub托管与README
-- [x] 项目重命名为vibereview，skill重命名为vibe-review
+- [x] 项目重命名为vibe-review，skill重命名为vibe-review
 - [x] skill内容纳入仓库版本管理，添加setup.sh一键安装
 - [x] vibe-review skill提取为独立[npm包](https://www.npmjs.com/package/@tsukiyokai/vibe-review)（[GitHub](https://github.com/tsukiyokai/vibe-review-skill)）
 

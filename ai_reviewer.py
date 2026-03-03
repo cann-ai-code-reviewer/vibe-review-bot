@@ -5,56 +5,56 @@
   支持跨仓库审查：通过 --repo 参数指定目标仓库（默认 hcomm-dev）。
   --repo 同时决定本地仓库路径（脚本所在 jbs 目录的同级目录）和 GitCode API 目标。
 
-  PR 审查结果保存到 vibereview/log/{owner}/{repo}/by_pr/ 目录。
-  本地文件审查结果保存到 vibereview/log/{owner}/{repo}/by_file/ 目录。
+  PR 审查结果保存到 vibe-review-bot/log/{owner}/{repo}/by_pr/ 目录。
+  本地文件审查结果保存到 vibe-review-bot/log/{owner}/{repo}/by_file/ 目录。
 
 用法:
   1. 设置 GitCode 个人访问令牌 (PR 审查需要):
      export GITCODE_TOKEN=your_personal_access_token
 
   2. 审查最近 N 个 open PR (默认 3，默认仓库 hcomm-dev):
-     python3 jbs/vibereview/ai_reviewer.py
-     python3 jbs/vibereview/ai_reviewer.py --count 5
+     python3 jbs/vibe-review-bot/ai_reviewer.py
+     python3 jbs/vibe-review-bot/ai_reviewer.py --count 5
 
   3. 审查指定 PR:
-     python3 jbs/vibereview/ai_reviewer.py --pr 1150
-     python3 jbs/vibereview/ai_reviewer.py --pr 1150 1144 1143
+     python3 jbs/vibe-review-bot/ai_reviewer.py --pr 1150
+     python3 jbs/vibe-review-bot/ai_reviewer.py --pr 1150 1144 1143
 
   4. 跨仓库审查（--repo 指定目标仓库）:
-     python3 jbs/vibereview/ai_reviewer.py --repo hcomm --pr 100
-     python3 jbs/vibereview/ai_reviewer.py --repo hcomm-dev --count 3
-     python3 jbs/vibereview/ai_reviewer.py --repo hcomm --file src/xxx.cpp
+     python3 jbs/vibe-review-bot/ai_reviewer.py --repo hcomm --pr 100
+     python3 jbs/vibe-review-bot/ai_reviewer.py --repo hcomm-dev --count 3
+     python3 jbs/vibe-review-bot/ai_reviewer.py --repo hcomm --file src/xxx.cpp
 
   5. 审查指定用户的 open PR:
-     python3 jbs/vibereview/ai_reviewer.py --author lilin_137           # 最近 3 个
-     python3 jbs/vibereview/ai_reviewer.py --author lilin_137 -n 0      # 全部
+     python3 jbs/vibe-review-bot/ai_reviewer.py --author lilin_137           # 最近 3 个
+     python3 jbs/vibe-review-bot/ai_reviewer.py --author lilin_137 -n 0      # 全部
 
   6. 审查并保存到本地:
-     python3 jbs/vibereview/ai_reviewer.py --pr 1150 --save
+     python3 jbs/vibe-review-bot/ai_reviewer.py --pr 1150 --save
 
   7. 审查并发布评论到 GitCode PR:
-     python3 jbs/vibereview/ai_reviewer.py --pr 1150 --comment
+     python3 jbs/vibe-review-bot/ai_reviewer.py --pr 1150 --comment
 
   8. 审查已合并的 PR:
-     python3 jbs/vibereview/ai_reviewer.py --state merged --count 3
+     python3 jbs/vibe-review-bot/ai_reviewer.py --state merged --count 3
 
   9. 审查本地文件:
-     python3 jbs/vibereview/ai_reviewer.py --file src/xxx.cpp
-     python3 jbs/vibereview/ai_reviewer.py --file src/a.cpp src/b.h --save
+     python3 jbs/vibe-review-bot/ai_reviewer.py --file src/xxx.cpp
+     python3 jbs/vibe-review-bot/ai_reviewer.py --file src/a.cpp src/b.h --save
 
  10. 强制重新审查 (忽略已审查过最新提交的判断):
-     python3 jbs/vibereview/ai_reviewer.py --pr 1150 --comment --force
+     python3 jbs/vibe-review-bot/ai_reviewer.py --pr 1150 --comment --force
 
  11. 查看审查采纳率统计:
-     python3 jbs/vibereview/ai_reviewer.py --stats
-     python3 jbs/vibereview/ai_reviewer.py --stats --days 90
+     python3 jbs/vibe-review-bot/ai_reviewer.py --stats
+     python3 jbs/vibe-review-bot/ai_reviewer.py --stats --days 90
 
  12. 手动追踪审查结果:
-     python3 jbs/vibereview/ai_reviewer.py --track
-     python3 jbs/vibereview/ai_reviewer.py --track --pr 1150
+     python3 jbs/vibe-review-bot/ai_reviewer.py --track
+     python3 jbs/vibe-review-bot/ai_reviewer.py --track --pr 1150
 
  13. 导入历史审查数据:
-     python3 jbs/vibereview/ai_reviewer.py --import-logs
+     python3 jbs/vibe-review-bot/ai_reviewer.py --import-logs
 
   选项可组合：--author 筛选用户, --count 限制数量, --state 筛选状态, --dry-run 只拉取不审查。
   --repo 默认 hcomm-dev，对应本地 ~/repo/hcomm-dev/ 和 GitCode cann/hcomm-dev。
@@ -69,6 +69,7 @@ import io
 import json
 import os
 import re
+import unicodedata
 import sqlite3
 import subprocess
 import sys
@@ -115,7 +116,7 @@ AI_REVIEW_MARKER = "## AI Code Review"
 # 行内评论标识（附加在每条行内评论 body 末尾，用于识别和清理）
 AI_INLINE_MARKER = "<!-- AI_CODE_REVIEW -->"
 # 并发审查上限，避免 API 限流
-MAX_PARALLEL_REVIEWS = 2
+MAX_PARALLEL_REVIEWS = 4
 # 目录审查文件数上限
 MAX_DIR_FILES = 20
 # 审查结果最短有效长度（低于此值视为无效输出，触发重试）
@@ -196,6 +197,20 @@ _USE_COLOR = _supports_color()
 def _c(code: str, text: str) -> str:
     """应用 ANSI 颜色代码。"""
     return f"\033[{code}m{text}\033[0m" if _USE_COLOR else str(text)
+
+
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _vw(s: str) -> int:
+    """计算字符串在终端中的视觉宽度（去除ANSI码，CJK字符算2列）。"""
+    s = _ANSI_RE.sub("", s)
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+
+
+def _pad(s: str, width: int) -> str:
+    """按视觉宽度右填充空格，使其对齐到指定列。"""
+    return s + " " * max(0, width - _vw(s))
 
 
 def _dim(t: str) -> str:    return _c("2", t)
@@ -2464,12 +2479,13 @@ def _print_stats_for_repo(
         ).fetchall()
         if not rows:
             continue
+        col_w = max(_vw(rule or "?") for rule, _, _ in rows) + 2
         print()
         print(f"  {label}")
         for rule, total, addr in rows:
             rate = f"{addr/total*100:.0f}%" if total > 0 else "  -"
             tag = _red("  ← 降权") if show_suggestion and total > 0 and addr / total < 0.3 else ""
-            print(f"    {_dim(rule or '?'):<20} {total:>3}  {rate:>5}{tag}")
+            print(f"    {_pad(_dim(rule or '?'), col_w)} {total:>3}  {rate:>5}{tag}")
 
     print()
 
@@ -3732,12 +3748,25 @@ def _main_pr_review(repo: RepoConfig, args: argparse.Namespace, token: str, save
                 pool.submit(_review_single_pr, repo, pr, i, len(prs), args, token, save_local, output_dir): pr
                 for i, pr in enumerate(prs)
             }
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                if result is not None:
-                    with print_lock:
-                        print(result.log, end="")
-                    results.append(result)
+            try:
+                completed_count = 0
+                total_count = len(futures)
+                for future in concurrent.futures.as_completed(futures):
+                    result = future.result()
+                    completed_count += 1
+                    if result is not None:
+                        with print_lock:
+                            print(result.log, end="")
+                        results.append(result)
+                    remaining = total_count - completed_count
+                    if remaining > 0:
+                        print(f"  {_dim(f'[{completed_count}/{total_count}] 剩余 {remaining} 个 PR 审查中...')}", flush=True)
+            except KeyboardInterrupt:
+                print(f"\n{_yellow('中断：正在取消剩余任务...')}")
+                for f in futures:
+                    f.cancel()
+                pool.shutdown(wait=False, cancel_futures=True)
+                sys.exit(130)
 
     # Step 3: 汇总
     total_secs = time.monotonic() - total_start

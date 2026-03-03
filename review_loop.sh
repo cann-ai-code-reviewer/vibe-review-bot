@@ -8,7 +8,7 @@ set -euo pipefail
 # 同时输出到终端和日志文件
 LOG_DIR="$(cd "$(dirname "$0")" && pwd)/log/run"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/review_loop_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="$LOG_DIR/review_loop_$(date +%Y%m%d_%H%M%S).txt"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "日志文件：$LOG_FILE"
 
@@ -42,7 +42,7 @@ except:
   if [ ! -f "$CACHE_FILE" ]; then
     # 首次运行，跑一次完整审查
     printf "[%s] 首次运行，执行审查\n" "$(date +%H:%M:%S)"
-    if FORCE_COLOR=1 python3 "$SCRIPT_DIR/ai_reviewer.py" \
+    if FORCE_COLOR=1 PYTHONUNBUFFERED=1 python3 "$SCRIPT_DIR/ai_reviewer.py" \
       --token "$TOKEN" --repo "$REPO" --team "$TEAM_FILE" -n 0 --comment; then
       echo "$new_shas" > "$CACHE_FILE"
     else
@@ -57,7 +57,7 @@ except:
     # 提取变更的 PR 编号（从 < 和 > 行中取，去重）
     _changed=$(echo "$_diff_out" | grep -oE '[0-9]+:' | tr -d ':' | sort -u | paste -sd',' -)
     printf "[%s] 检测到变更，执行审查\n" "$(date +%H:%M:%S)"
-    if FORCE_COLOR=1 python3 "$SCRIPT_DIR/ai_reviewer.py" \
+    if FORCE_COLOR=1 PYTHONUNBUFFERED=1 python3 "$SCRIPT_DIR/ai_reviewer.py" \
       --token "$TOKEN" --repo "$REPO" --team "$TEAM_FILE" -n 0 --comment \
       ${_changed:+--highlight "$_changed"}; then
       echo "$new_shas" > "$CACHE_FILE"
