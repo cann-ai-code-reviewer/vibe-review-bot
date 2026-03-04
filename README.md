@@ -7,7 +7,48 @@ CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具
 维护者：@tsukiyokai <br>
 Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 
-## 工作流程
+## 效果
+
+### 截图
+
+![demo](./assets/demo.gif)
+
+### 案例
+
+提出400+检视意见，部分PR如下：
+
+1. https://gitcode.com/cann/hcomm/merge_requests/216?ref=&did=843d9c3470b72be3a38c4640ff06eb556eb8c78e#tid-164023609
+2. https://gitcode.com/cann/hcomm/merge_requests/591?ref=&did=214b2ca0d32a3447b58098d4d020f1bc9077a773#tid-164023154
+3. https://gitcode.com/cann/hcomm/merge_requests/633?ref=&did=a262afc23add2ef7f6db59f58dcafebe0ea91f99#tid-164022216
+4. https://gitcode.com/cann/hcomm/merge_requests/631?ref=&did=fff17f2eb24a383aa9a8e98f49462fb5fda50016#tid-164021674
+5. https://gitcode.com/cann/hcomm/merge_requests/574?ref=&did=98738dbdd3cc247e081f2216cae67625ef401c12#tid-164020531
+6. https://gitcode.com/cann/hcomm/merge_requests/652?ref=&did=b0a614c2fca2e40ba663e7b11c7934e2ade21516#tid-164020494
+7. https://gitcode.com/cann/hcomm/merge_requests/512?ref=&did=79391aeafdbf42685eb660c31574641a7e41ad13#tid-164018411
+8. https://gitcode.com/cann/hcomm/merge_requests/469?ref=&did=0804f30b854cf5941b80ed68b1cf2e741f77b39f#tid-164018089
+9. https://gitcode.com/cann/hcomm/merge_requests/304?ref=&did=a463be7322a438d7c512324d2d420dfa1458f67c#tid-164017505
+10. https://gitcode.com/cann/hcomm/merge_requests/367?ref=&did=3c9b7fbdb0456df12a44708f94ede1bd28c7b758#tid-164016861
+11. https://gitcode.com/cann/hcomm/merge_requests/653?ref=&did=ec92e6ecaa4ce195fe92cc8b74c5f08b35b27d8b#tid-164016463
+
+### 统计
+
+|推理指标|CodeReview指标|
+|-|-|
+|TTFT|首条检视意见提出时间|
+|TPS|每日检视意见数量|
+|Total Latency|Time To Merge|
+
+- 中硬计算网络技术部的`lilin_137`是这个仓库最活跃的人类reviewer，在最新170个PR（50个已合并+120个open）的所有实质性检视意见（排除bot、AI review、PR作者自评、以及lgtm/approve/compile等纯命令）中，他贡献了全部人类检视意见的约25%（远超第二名），共提了54条实质性检视意见，日均14条，2月27日一天就提了35条，可能是集中review了一批PR。人类reviewer整体的中位响应时间为1.9天。
+- 3月4日，AI审查了33人名单里的64个PR，提出193条检视意见。单PR从开始审查到评论发出的中位数6m14s，均值6m19s，57%的PR在5-10分钟内完成，25%在3-5分钟，最快1分钟（小PR），最慢15分钟（大PR），端到端时延（开发者push到收到评论）还要加上轮询间隔平均感知延迟\~30s（60s轮询周期）和Step1获取PR列表\~5s。所以典型场景是开发者push代码后约7分钟收到AI检视评论。冷启动时（积压多个PR）最长一轮耗时51分钟。
+
+### 用户评价
+
+- 本组新员工：这个AI挺厉害的，扫出来的两个（多线程问题）是对的。
+- 本组祥哥：杉杉在搞AI祥哥了。
+- 本组MDE：感觉你这个检视很强了。
+- 中硬迭代经理：大家的蓝区代码关注下这个AI检视，我发现这个检视工具可以发现绝大多数的问题，可以提高检视的效率。不仅只看这笔代码，还能举一反三看其他地方有没有改到。
+- 中硬新员工：框架这边的AI读代码感觉更严格点，然后读的范围更大。
+
+## 执行流程
 
 ```
                          review_loop.sh (poll 60s)
@@ -152,9 +193,9 @@ log/                     # 检视产出，按仓库和维度组织：
 
 3/3 — npm发包：vibe-review skill提取为独立项目[vibe-review-skill](https://github.com/tsukiyokai/vibe-review-skill)，发布到npm（[@tsukiyokai/vibe-review](https://www.npmjs.com/package/@tsukiyokai/vibe-review)）。用户通过`npx @tsukiyokai/vibe-review --global`一键安装。vibe-review-bot仓库不再包含skill源码，改为依赖npm包。
 
-## TODO
+![daily](./assets/daily_cost.png)
 
-### 已完成
+## TODO
 
 - [x] 创建vibe-review skill，基于CANN C++编码规范
 - [x] 通过GitCode API自动拉取PR diff
@@ -197,79 +238,104 @@ log/                     # 检视产出，按仓库和维度组织：
 - [x] 项目重命名为vibe-review，skill重命名为vibe-review
 - [x] skill内容纳入仓库版本管理，添加setup.sh一键安装
 - [x] vibe-review skill提取为独立[npm包](https://www.npmjs.com/package/@tsukiyokai/vibe-review)（[GitHub](https://github.com/tsukiyokai/vibe-review-skill)）
-
-### 待完成
-
-#### A 基础功能专题
-
-目标：支持更多有趣的功能。
-
-事务：
-
-- [ ] 支持Gitee V5 API。
+- [ ] 支持Gitee V5 API
 - [ ] webhook打通（跑个HTTP server来接收GitCode的webhook请求，部署复杂度UP）。
-
-#### B 质量专题
-
-目标：发现BUG，减少噪音。
-
-事务：
-
-- [x] 从hcomm仓库git历史挖掘HCCL高价值缺陷模式：分析全部428次提交，识别84次缺陷提交，逐条分析根因和修复模式，产出48条审查规则覆盖12个缺陷类别（算法正确性、并发、内存、整数溢出、错误处理、资源生命周期等）+ 6条跨类别系统性风险规则。规则已写入skill的references/standards-project-hccl.md
-- [ ] 用上述方法完成ops-transformer代码仓分析，输出references/standards-project-ops-transformer.md
+- [x] 从hcomm仓库git历史挖掘HCCL高价值缺陷模式：分析全部428次提交，识别84次缺陷提交，逐条分析根因和修复模式，产出48条审查规则覆盖12个缺陷类别（算法正确性、并发、内存、整数溢出、错误处理、资源生命周期等）+ 6条跨类别系统性风险规则。规则已写入skill的references/standards-project-hccl.md -- 260302
+- [x] 用上述方法完成ops-transformer代码仓分析，输出references/standards-project-ops-transformer.md -- 260303
 - [ ] cc管道模式和交互模式的效果差异分析
-- [ ] 形成一套检视意见反馈skill的方法论
+- [ ] 与CMC合作形成一套检视意见反馈skill的方法论
+- [ ] 采纳率算法优化（存储上使用了Python标准库的sqlite3模块，主要用于PR审查的跟踪数据库（TRACKING_DB）；算法上因为diff追踪算法还没完全实现出来所以下图数据不算数）
 
-进展：
+  ![image-20260304165223897](./assets/image-20260304165223897.png)
 
-#### C 推广专题
+- [ ] 切到内部模型上跑 -- 目前大师兄正在做。
 
-目标：覆盖更多代码。
+## 想做的事
+
+### 一 基础功能
+
+目标：开发更多有趣的功能。详见[TODO](#todo)。
+
+### 二 检视质量
+
+目标：发现真正的BUG，减少噪音。
+
+<img src="./assets/image-20260304201615641.png" alt="image-20260304201615641" style="zoom: 67%;" />
+
+### 三 推广
+
+目标：帮助更多人。
 
 事务&进展：
 
-1、推广到2012中央硬件工程院-计算网络技术部：hccl代码比其他算子组多，且存在大量host侧的纯cpp代码（framework、platform），能产生的检视意见数量更多，理论上效果会比扫描acl代码更好。个人希望马上能在hccl小范围部署（先定50人名单，我自费给hccl扫描），需要一些软件&业务高手帮忙分析检视报告，定期（每周）反馈误报+高价值案例+历史dts的分析结果，统一优化skill。
+- 推广到2012中央硬件工程院-计算网络技术部：hccl代码比其他算子组多，且存在大量host侧的纯cpp代码（framework、platform），能产生的检视意见数量更多，理论上效果会比扫描acl代码更好。个人希望马上能在hccl小范围部署（先定50人名单，我自费给hccl扫描），需要一些软件&业务高手帮忙分析检视报告，定期（每周）反馈误报+高价值案例+历史dts的分析结果，统一优化skill。
+  - 2026.3.2：和计算网络技术部丁炜秦、车佳交流了，开始在中硬HCCL框架组推广。
+- 推广到2012中央研究院-创新算子部（其他CANN仓）的分析：功能上早就支持扫描任何cann仓了，但是效果上算子组acl代码居多，当前类DSL扫描效果有待商榷，个人担心出现大量噪音。现阶段仍由本人继续优化，计划3月底完成推广。
+  - 2026.2.28：和创新算子部CMC张峰、FA组郭世杰交流了，世杰能帮忙开发。
+  - 2026.3.2：和推理组韩秋涵交流了，后续如果考虑拓展到python语言或把自动化脚本推广到omni仓的话这部分可以由她帮忙搞。
+  - 2026.3.3：用神秘方法完成了ops-transformer的原始语料积累，可作为推广的“启动资金”。
 
-1. 2026.3.2：和计算网络技术部丁炜秦、车佳交流了，开始在中硬HCCL框架组推广。
-
-2、推广到2012中央研究院-创新算子部（其他CANN仓）的分析：功能上早就支持扫描任何cann仓了，但是效果上算子组ACL代码居多，当前类DSL扫描效果有待商榷，个人担心出现大量噪音。现阶段仍由本人继续优化，计划3月底完成推广。
-
-1. 2026.2.28：和创新算子部CMC张峰、FA组郭世杰交流了，世杰也能帮忙开发。
-2. 2026.3.2：和推理组韩秋涵交流了，后续如果考虑拓展到python语言或把自动化脚本推广到omni仓的话这部分可以由她帮忙搞。
-
-#### D 运营专题
+### 四 运营
 
 目标：持续改进。
 
 建立长效机制不断改进检视效果和提高自动化程度。把对误报/高价值缺陷模式的分析结果先反馈到skill再前馈到检视结果，侧重运作机制而非对模式的分析方法。
 
-事务：
+进展：
 
-- [ ] 采纳率算法优化
+1. 2026.2.28：组内在黄区建了个共享表格采集反馈。小问题：目前本组多数人是黄区PC+在黄蓝空间开发，if在黄区建共享表格的话不方便闭环到蓝区，但是在蓝区建共享表格的话用啥平台？
+
+### 五 成本
+
+目标：缩短时间，降低价格。
+
+当前效果虽好但成本实在有点太高了，考虑到项目还处于早期阶段，打算全力提升质量，先不管成本了，不过有兴趣的同学也可以先思考看看。
+
+本人基于最近92次审查数据分析得到按PR规模分层的检视成本如下：
+
+| 规模             | 样本 | 平均行数 | 平均耗时 | Output  | Cache Write | Cache Read  | 费用(USD) | 费用(RMB) |
+|------------------|------|----------|----------|---------|-------------|-------------|-----------|-----------|
+| Tiny (<50)       | 21   | 22       | 3m38s    | 10,552  | 30,999      | 266,190     | $0.58     | ¥4.2      |
+| Small (50-200)   | 24   | 131      | 5m35s    | 16,882  | 41,104      | 404,837     | $0.88     | ¥6.4      |
+| Medium (200-500) | 15   | 317      | 8m13s    | 23,673  | 66,872      | 694,209     | $1.35     | ¥9.8      |
+| Large (500-1k)   | 14   | 707      | 7m28s    | 21,841  | 89,544      | 691,530     | $1.46     | ¥10.6     |
+| XL (>1000)       | 18   | 1,195    | 8m19s    | 22,416  | 71,485      | 1,199,938   | $1.62     | ¥11.7     |
+
+一些规律：成本增速递减，diff从22行到1195行增长60倍，但费用只从¥4.2涨到¥11.7（2.8倍），固定开销（system prompt、skill加载、多轮协调）占了大头；Output有天花板，不论diff多大，Output稳定在1-2.3万tokens，真正随diff膨胀的是Cache Read（从27万涨到120万）；耗时在Medium后趋于平台，Tiny 3.5分钟，Medium/Large/XL都在7-8分钟；Input几乎可忽略，全部被cache命中，实际Input只有几百tokens。
+
+降成本思路：
+
+1. 大PR比小PR"划算"：Tiny ¥0.19/行，XL ¥0.01/行，单位行成本差20倍。与其频繁扫小PR，不如优先扫大的，ROI更高。
+2. 主战场在固定开销：每次调用不管diff多大，system prompt + skill加载 + 多轮协调就要吃掉约¥4的底。精简SKILL.md和references能直接砍固定成本；如果能复用会话（一个session审多个PR而非每个PR独立启动claude进程），固定开销可以被摊薄。
+3. Output是最贵的token：Output单价是Cache Read的50倍（sonnet \$15/M vs \$0.30/M）。如果能让模型输出更精炼（只报严重问题、精简修复建议），Output从2万降到1万就能省约30%。
+4. Tiny PR预过滤：22行的PR花¥4.2扫，很可能什么都扫不出来。纯改名、纯删除、纯注释修改等trivial变更可以直接跳过。
+
+说到前两点，小PR曾是软件工程的公认最佳实践：
+
+1. Google Engineering Practices 明确要求"small CLs"，认为小变更更容易review、更快合入、回滚风险更低。文档见 google.github.io/eng-practices/review/developer/small-cls.html
+
+2. Microsoft Research Czerwonka et al. 发现变更越大，review中发现缺陷的概率反而越低
+
+4. 一个互联网meme：
+
+     <img src="./assets/25aac130c87c3e60c036a2fe8ea600c9.jpg" style="zoom:50%;" />
+
+这里就引入了一个有趣的矛盾：人工review小PR效果好（因为注意力集中），但AI review小PR成本不划算（因为固定开销摊不薄）。这其实说明AI和人的review特性不同，人的瓶颈是注意力，大PR会疲劳遗漏；AI的瓶颈是启动成本，小PR浪费算力。
+
+核心问题是：谁适配谁？
+
+- 小PR不只是一个review策略，它反映的是人如何思考、如何拆解问题、如何管理风险、如何协作。这些是人的认知规律决定的——人脑的context有限，小批量是对抗复杂性的基本手段。这属于人的领域。
+- AI的固定开销——system prompt加载多少token、session如何管理、cache怎么命中——这些是工具的实现细节。这是属于工具的领域。
+
+如果因为工具贵就改变人的工作方式，等于让工具的局限性侵入人的决策领域，人去迁就工具。反过来，优化工具的固定开销，是把问题留在工具的领域内解决，让工具去适配人。
+
+边界应该是：人决定怎么写代码、怎么拆PR、怎么协作，AI作为工具去适配这些决策，而不是反过来。工具的成本结构不应该成为人改变工程实践的理由。
+
+所以不应该因为AI review成本高就鼓励大PR，而是应该反过来优化AI的固定开销，让它适配小PR的最佳实践。前面说的"一个session审多个PR"就是这个思路。
 
 进展：
 
-1. 2026.2.28：在黄区建了个共享表格采集反馈。小问题：目前本组多数人是黄区PC+在黄蓝空间开发，if在黄区建共享表格的话不方便闭环到蓝区，在蓝区建共享表格的话用啥平台？
-
-#### E 成本专题
-
-目标是降低时间和价格。
-
-当前效果虽好但成本实在过高（四舍五入平均一个500行的PR十块钱）。早期阶段全力提升质量，先不管成本，不过有兴趣的同学也可以先思考看看。
-
-进展：
-
-1. 2026.3.2：单个PR(+16,-1)直接把世杰的GLM4.7的tok耗完了(约100M)，看来降成本必须提上日程了！
-2. 2026.3.3：补个成本分析（以一个500行的PR为例）：1、Input几乎可忽略 — 大段system prompt和skill内容全部走Cache Read，实际Input只有几十到几百token；2、费用大头是Output（按API列表价 $75/M，24K token就要 $1.80）。Cache Read虽然量大（850K），但单价极低（$1.50/M），只贡献约 $1.28；3、耗时不线性 — 4行PR需要1分钟，1200行需要9-15分钟，固定开销（prompt加载、多轮协调）占比大；4、同一PR多次review费用波动明显（如 #557 三次分别 $1.27、$1.21、$1.80），LLM输出长度有随机性。
-
-| 指标          | 估算值                       |
-|---------------|------------------------------|
-| 审查耗时      | ~8分钟                       |
-| Input tokens  | ~500（绝大部分被cache命中） |
-| Output tokens | ~24,000                      |
-| Cache Write   | ~75,000                      |
-| Cache Read    | ~850,000                     |
-| 实际费用      | ~$1.50（约11元人民币）      |
+1. 2026.3.2：单个PR(+16,-1)直接把世杰的GLM4.7的tok耗完了(约100M)，降成本必须提上日程了！
 
 ## 参与贡献
 
@@ -280,9 +346,11 @@ log/                     # 检视产出，按仓库和维度组织：
 3. 提PR，写清楚改了什么、为什么改
 4. 维护者review后merge
 
-适合上手的贡献：总结本组误报和高价值检视意见和DTS缺陷模式，反馈并闭环到skill、修复你碰到的bug。
+适合上手的贡献：总结自己资源组的误报和高价值检视意见以及DTS缺陷模式，反馈并闭环到skill、修复你碰到的bug。
 
-沟通约定：日常问题在Slack交流；决策和TODO变更落到GitHub。
+沟通约定：请通过issue以异步方式进行交流，拒绝微信办公。
+
+<img src="./assets/20210801111018892.jpg" alt="img" style="zoom:33%;" />
 
 ## 延伸阅读
 

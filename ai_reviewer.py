@@ -112,7 +112,7 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "claude-haiku-4-5":  {"input": 1,  "output": 5,  "cache_write": 1.25, "cache_read": 0.10},
 }
 # 支持的模型：claude-opus-4-6, claude-sonnet-4-6, claude-sonnet-4-5, claude-haiku-4-5
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-opus-4-6"
 _review_model = DEFAULT_MODEL
 # AI 评论标识（用于识别和清理旧评论）
 AI_REVIEW_MARKER = "## AI Code Review"
