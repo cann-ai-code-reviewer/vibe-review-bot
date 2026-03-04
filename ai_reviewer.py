@@ -88,7 +88,7 @@ GITCODE_API_BASE = "https://api.gitcode.com/api/v5"
 OWNER = "cann"
 # REPO 和 REPO_URL 改为运行时从 --repo 参数确定，见 RepoConfig
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPOS_ROOT = SCRIPT_DIR.parent.parent  # jbs 的父目录，即 ~/repo/
+REPOS_ROOT = SCRIPT_DIR.parent.parent.parent  # ~/repo/
 # 单个 PR diff 最大字符数（防止超出 Claude 上下文窗口）
 MAX_DIFF_CHARS = 80000
 # vibe-review skill 路径
@@ -111,6 +111,9 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "claude-sonnet-4-5": {"input": 3,  "output": 15, "cache_write": 3.75, "cache_read": 0.30},
     "claude-haiku-4-5":  {"input": 1,  "output": 5,  "cache_write": 1.25, "cache_read": 0.10},
 }
+# 支持的模型：claude-opus-4-6, claude-sonnet-4-6, claude-sonnet-4-5, claude-haiku-4-5
+DEFAULT_MODEL = "claude-sonnet-4-6"
+_review_model = DEFAULT_MODEL
 # AI 评论标识（用于识别和清理旧评论）
 AI_REVIEW_MARKER = "## AI Code Review"
 # 行内评论标识（附加在每条行内评论 body 末尾，用于识别和清理）
@@ -259,6 +262,7 @@ class ReviewStats:
     cache_creation_tokens: int = 0
     cost_usd: float = 0.0       # Claude Code 报告的费用
     calc_cost_usd: float = 0.0  # 基于官方价格表独立计算的费用
+    model_names: list[str] = field(default_factory=list)  # 使用的模型名
     permission_denials: list[str] = field(default_factory=list)  # 被拒绝的工具调用描述
     duration_ms: int = 0
     num_turns: int = 0
@@ -275,6 +279,8 @@ class ReviewStats:
     def fmt(self) -> str:
         """格式化为一行摘要。"""
         parts = []
+        if self.model_names:
+            parts.append("+".join(self.model_names))
         if self.input_tokens or self.output_tokens:
             parts.append(f"输入 {self.input_tokens:,} / 输出 {self.output_tokens:,} tokens")
         if self.cache_creation_tokens:
@@ -687,6 +693,7 @@ def _parse_json_output(raw: str) -> tuple[str, ReviewStats]:
     model_usage = data.get("modelUsage", {})
     if isinstance(model_usage, dict) and model_usage:
         for model_name, mu in model_usage.items():
+            stats.model_names.append(model_name)
             stats.input_tokens += mu.get("inputTokens", 0)
             stats.output_tokens += mu.get("outputTokens", 0)
             stats.cache_read_tokens += mu.get("cacheReadInputTokens", 0)
@@ -1276,7 +1283,7 @@ def _run_claude(prompt: str, cwd: Path, max_retries: int = 2, allowed_tools: lis
     env["CLAUDE_CODE_OUTPUT_STYLE"] = ""
     stats = ReviewStats()
     for attempt in range(1, max_retries + 1):
-        cmd = ["claude", "-p", "--output-format", "json", "--model", "claude-opus-4-6"]
+        cmd = ["claude", "-p", "--output-format", "json", "--model", _review_model]
         if allowed_tools:
             for tool in allowed_tools:
                 cmd.extend(["--allowedTools", tool])
@@ -1700,6 +1707,41 @@ def _is_already_reviewed(repo: RepoConfig, token: str, pr_number: int, head_sha:
         if match and match.group(1) == head_sha:
             return True
     return False
+
+
+def _get_last_review_info(repo: RepoConfig, token: str, pr_number: int
+                          ) -> tuple[str, str] | None:
+    """获取上次 AI 审查的 SHA 和时间。返回 (reviewed_sha, review_time) 或 None。"""
+    comments = _fetch_all_pr_comments(repo, token, pr_number)
+    for comment in reversed(comments):
+        body = comment.get("body", "")
+        is_ai_comment = (
+            body.startswith(AI_REVIEW_MARKER)
+            or (body.startswith("**[") and AI_REVIEW_MARKER in body[:200])
+        )
+        if not is_ai_comment:
+            continue
+        match = re.search(r"<!-- REVIEWED_SHA:(\w+) -->", body)
+        if match:
+            reviewed_sha = match.group(1)
+            review_time = comment.get("updated_at") or comment.get("created_at", "")
+            return reviewed_sha, review_time
+    return None
+
+
+def _get_head_commit_info(repo: RepoConfig, token: str, pr_number: int
+                          ) -> tuple[str, str, str] | None:
+    """获取 PR 最新 commit 的作者、时间、消息。返回 (author, date, message) 或 None。"""
+    data = _api_request("GET", f"/repos/{repo.full_name}/pulls/{pr_number}/commits",
+                        token, params={"per_page": 1, "page": 1, "sort": "created", "direction": "desc"})
+    if not data or not isinstance(data, list) or len(data) == 0:
+        return None
+    commit = data[-1]  # API 可能不支持 direction，取最后一个
+    c = commit.get("commit", {})
+    author_info = c.get("author", {})
+    return (author_info.get("name", "?"),
+            author_info.get("date", "?"),
+            c.get("message", "").split("\n")[0][:80])
 
 
 def delete_old_review_comments(repo: RepoConfig, token: str, pr_number: int) -> int:
@@ -3035,6 +3077,17 @@ def _review_single_pr(
 
     buf.write(f"{_bold(f'[Step 2.{index + 1}]')} {_dim(_now())} PR #{pr_number}: {pr_title}\n")
 
+    # 检测是否为新提交触发的重新审查
+    if head_sha and token:
+        last = _get_last_review_info(repo, token, pr_number)
+        if last:
+            last_sha, last_time = last
+            commit_info = _get_head_commit_info(repo, token, pr_number)
+            author = commit_info[0] if commit_info else "?"
+            commit_date = commit_info[1] if commit_info else "?"
+            buf.write(f"  {_dim(f'上次检视：{last_sha[:12]} @ {last_time}')}\n")
+            buf.write(f"  {_dim(f'新提交：{head_sha[:12]} by {author} @ {commit_date}，需要重新检视')}\n")
+
     # 获取变更文件
     buf.write(f"  {_dim(_now())} 获取变更文件\n")
     t0 = time.monotonic()
@@ -3258,6 +3311,8 @@ def main() -> None:
                         help="并行审查的最大 PR 数（默认 0 即自动：1 个 PR 顺序，多个 PR 并行，上限 3）")
     parser.add_argument("--force", action="store_true",
                         help="强制审查，忽略已审查过最新提交的判断")
+    parser.add_argument("--model", type=str, default=DEFAULT_MODEL,
+                        help=f"审查使用的模型（默认 {DEFAULT_MODEL}）")
     parser.add_argument("--repo", type=str, default="hcomm", dest="target_repo",
                         help="目标仓库，支持 owner/name（如 myorg/myrepo）或仅 name（默认 owner=cann）")
     parser.add_argument("--clean", type=int, nargs="+", metavar="NUM",
@@ -3275,6 +3330,9 @@ def main() -> None:
     parser.add_argument("--highlight", type=str, default="",
                         help="高亮显示的 PR 编号（逗号分隔，如 --highlight 385,538），用于标记触发审查的变更 PR")
     args = parser.parse_args()
+
+    global _review_model
+    _review_model = args.model
 
     # 解析 owner/name，支持 --repo cann/hcomm 或 --repo hcomm（默认 owner=cann）
     if "/" in args.target_repo:
@@ -3759,7 +3817,7 @@ def _main_pr_review(repo: RepoConfig, args: argparse.Namespace, token: str, save
                             print(result.log, end="")
                         results.append(result)
                     remaining = total_count - completed_count
-                    if remaining > 0:
+                    if remaining > 0 and result is not None and not result.skipped:
                         print(f"  {_dim(f'[{completed_count}/{total_count}] 剩余 {remaining} 个 PR 审查中...')}", flush=True)
             except KeyboardInterrupt:
                 print(f"\n{_yellow('中断：正在取消剩余任务...')}")
