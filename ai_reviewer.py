@@ -752,6 +752,9 @@ def _api_request(
     except URLError as e:
         print(f"  {_fail(f'网络错误：{e.reason}')}")
         return None
+    except (TimeoutError, OSError) as e:
+        print(f"  {_fail(f'网络超时：{e}')}")
+        return None
 
 
 def api_get(path: str, token: str, params: dict = None) -> dict | list | None:
@@ -787,6 +790,9 @@ def api_post_form(path: str, token: str, fields: dict) -> dict | list | None:
         return None
     except URLError as e:
         print(f"  {_fail(f'网络错误：{e.reason}')}")
+        return None
+    except (TimeoutError, OSError) as e:
+        print(f"  {_fail(f'网络超时：{e}')}")
         return None
 
 
@@ -3810,7 +3816,15 @@ def _main_pr_review(repo: RepoConfig, args: argparse.Namespace, token: str, save
                 completed_count = 0
                 total_count = len(futures)
                 for future in concurrent.futures.as_completed(futures):
-                    result = future.result()
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        pr = futures[future]
+                        pr_num = pr.get("number", "?")
+                        with print_lock:
+                            print(f"  {_fail(f'PR #{pr_num} 审查异常：{exc}')}")
+                        completed_count += 1
+                        continue
                     completed_count += 1
                     if result is not None:
                         with print_lock:
