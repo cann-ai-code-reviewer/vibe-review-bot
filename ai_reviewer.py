@@ -137,8 +137,8 @@ FILE_REVIEW_TOOLS = ["Read", "Grep", "Glob", "Skill"]
 # Claude 可能用 git -C <path> 在非 cwd 仓库执行，需同时覆盖直接和 -C 两种形式
 PR_REVIEW_TOOLS = [
     "Read", "Grep", "Glob", "Skill",
-    "Bash(git show *)", "Bash(git log *)", "Bash(git diff *)", "Bash(git blame *)",
-    "Bash(git -C * show *)", "Bash(git -C * log *)", "Bash(git -C * diff *)", "Bash(git -C * blame *)",
+    "Bash(git show *)", "Bash(git log *)", "Bash(git diff *)", "Bash(git blame *)", "Bash(git fetch *)",
+    "Bash(git -C * show *)", "Bash(git -C * log *)", "Bash(git -C * diff *)", "Bash(git -C * blame *)", "Bash(git -C * fetch *)",
 ]
 
 
