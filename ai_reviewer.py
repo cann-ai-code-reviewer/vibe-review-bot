@@ -5,7 +5,7 @@
   支持跨仓库审查：通过 --repo 参数指定目标仓库（默认 hcomm-dev）。
   --repo 同时决定本地仓库路径（脚本所在 jbs 目录的同级目录）和 GitCode API 目标。
 
-  PR 审查结果保存到 vibe-review-bot/log/{owner}/{repo}/by_pr/ 目录。
+  PR 审查结果保存到 vibe-review-bot/log/{owner}/{repo}/pr_{number}/{sha}.md。
   本地文件审查结果保存到 vibe-review-bot/log/{owner}/{repo}/by_file/ 目录。
 
 用法:
@@ -163,7 +163,7 @@ class RepoConfig:
 
     @property
     def pr_log_dir(self) -> Path:
-        return SCRIPT_DIR / "log" / self.owner / self.name / "by_pr"
+        return SCRIPT_DIR / "log" / self.owner / self.name
 
     @property
     def file_log_dir(self) -> Path:
@@ -176,7 +176,7 @@ class RepoConfig:
 
 def _migrate_legacy_logs(repo: RepoConfig) -> None:
     """一次性迁移旧的扁平 log 目录到按仓库分层的结构。"""
-    for subdir in ("by_pr", "by_file", "by_dir"):
+    for subdir in ("by_file", "by_dir"):
         old = LOG_DIR / subdir
         new = SCRIPT_DIR / "log" / repo.owner / repo.name / subdir
         if old.exists() and not new.exists():
@@ -281,12 +281,11 @@ class ReviewStats:
         parts = []
         if self.model_names:
             parts.append("+".join(self.model_names))
-        if self.input_tokens or self.output_tokens:
-            parts.append(f"输入 {self.input_tokens:,} / 输出 {self.output_tokens:,} tokens")
-        if self.cache_creation_tokens:
-            parts.append(f"缓存写入 {self.cache_creation_tokens:,}")
-        if self.cache_read_tokens:
-            parts.append(f"缓存读取 {self.cache_read_tokens:,}")
+        total_input = self.input_tokens + self.cache_read_tokens + self.cache_creation_tokens
+        if total_input or self.output_tokens:
+            parts.append(f"输入 {total_input:,} / 输出 {self.output_tokens:,} tokens")
+        if self.cache_read_tokens or self.cache_creation_tokens:
+            parts.append(f"缓存 {self.cache_read_tokens:,}读 + {self.cache_creation_tokens:,}写")
         cost = self.best_cost
         if cost > 0:
             parts.append(f"${cost:.4f} / ¥{cost * USD_TO_CNY:.4f}")
@@ -685,7 +684,7 @@ def _parse_json_output(raw: str) -> tuple[str, ReviewStats]:
 
     # 提取费用和耗时
     stats.cost_usd = data.get("cost_usd", 0) or data.get("total_cost_usd", 0)
-    stats.duration_ms = data.get("duration_ms", 0) or data.get("duration_api_ms", 0)
+    stats.duration_ms = data.get("duration_api_ms", 0) or data.get("duration_ms", 0)
     stats.num_turns = data.get("num_turns", 0)
 
     # 提取 token 用量 —— 优先使用 modelUsage（会话级汇总，比 usage 更完整）
@@ -1544,13 +1543,19 @@ def run_claude_dir_review(file_paths: list[str], cwd: Path, max_retries: int = 2
 
 # ======================== 输出 ========================
 def write_review_md(repo: RepoConfig, pr: dict, review_text: str, output_dir: Path, head_sha: str = "") -> Path:
-    """将审查结果写入 markdown 文件。"""
+    """将审查结果写入 markdown 文件。
+
+    目录结构：log/<owner>/<repo>/pr_<number>/<sha>.md
+    """
     pr_number = pr.get("number", 0)
     pr_title = pr.get("title", "无标题")
     author = pr.get("user", {}).get("login", "unknown")
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    output_file = output_dir / f"pr_{pr_number}_review.md"
+    pr_dir = output_dir / f"pr_{pr_number}"
+    pr_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{head_sha[:12]}.md" if head_sha else "review.md"
+    output_file = pr_dir / filename
 
     summary = _extract_issue_summary(review_text)
     summary_row = f"\n| 发现 | {summary} |" if summary else ""
@@ -2698,7 +2703,12 @@ def _main_track(repo: "RepoConfig", args: argparse.Namespace, token: str) -> Non
 
 
 def _main_import_logs(repo: "RepoConfig", args: argparse.Namespace) -> None:
-    """从 log/by_pr/pr_*_review.md 导入历史审查数据。"""
+    """从日志目录导入历史审查数据。
+
+    兼容两种目录结构：
+    - 旧格式：by_pr/pr_<number>_review.md
+    - 新格式：pr_<number>/<sha>.md
+    """
     conn = _init_tracking_db()
     repo_name = repo.full_name
     log_dir = repo.pr_log_dir
@@ -2708,7 +2718,12 @@ def _main_import_logs(repo: "RepoConfig", args: argparse.Namespace) -> None:
         conn.close()
         return
 
+    # 兼容旧格式（by_pr/pr_*_review.md）和新格式（pr_*//*.md）
     review_files = sorted(log_dir.glob("pr_*_review.md"))
+    old_by_pr = log_dir / "by_pr"
+    if old_by_pr.exists():
+        review_files.extend(sorted(old_by_pr.glob("pr_*_review.md")))
+    review_files.extend(sorted(log_dir.glob("pr_*/*.md")))
     if not review_files:
         print(f"  {_warn('未找到审查日志文件')}")
         conn.close()
@@ -2720,8 +2735,8 @@ def _main_import_logs(repo: "RepoConfig", args: argparse.Namespace) -> None:
     skipped = 0
 
     for fpath in review_files:
-        # 从文件名提取 PR 编号
-        m = re.search(r"pr_(\d+)_review\.md", fpath.name)
+        # 从文件路径提取 PR 编号（兼容旧格式 pr_696_review.md 和新格式 pr_696/sha.md）
+        m = re.search(r"pr_(\d+)", str(fpath))
         if not m:
             continue
         pr_number = int(m.group(1))
@@ -3100,7 +3115,9 @@ def _review_single_pr(
 
     if args.dry_run:
         # dry-run 模式：仅保存 diff 不审查
-        diff_file = output_dir / f"pr_{pr_number}_diff.md"
+        pr_diff_dir = output_dir / f"pr_{pr_number}"
+        pr_diff_dir.mkdir(parents=True, exist_ok=True)
+        diff_file = pr_diff_dir / f"{head_sha[:12]}_diff.md" if head_sha else pr_diff_dir / "diff.md"
         diff_file.write_text(diff_text, encoding="utf-8")
         buf.write(f"  {_dim(f'[dry-run] Diff 已保存：{_file_link(diff_file)}')}\n")
         return PRResult(pr_number, pr_title, None, False, ReviewStats(), buf.getvalue())
@@ -3316,7 +3333,7 @@ def main() -> None:
     parser.add_argument("--track", action="store_true",
                         help="手动触发结果追踪（对已合并 PR 做最终分类）")
     parser.add_argument("--import-logs", action="store_true", dest="import_logs",
-                        help="从 log/by_pr/ 导入历史审查数据到追踪数据库")
+                        help="从日志目录导入历史审查数据到追踪数据库")
     parser.add_argument("--days", type=int, default=30,
                         help="--stats 的统计天数范围（默认 30）")
     parser.add_argument("--highlight", type=str, default="",
@@ -3443,16 +3460,14 @@ def _print_results_summary(
         summary_parts.append(f"费用合计：{_cyan(f'${total_cost:.4f}')} / {_cyan(f'¥{total_cost * USD_TO_CNY:.4f}')}")
     print(f"  {status} {' | '.join(summary_parts)}")
     if len(stats_list) > 1:
-        total_input = sum(s.input_tokens for s in stats_list)
         total_output = sum(s.output_tokens for s in stats_list)
         total_cache_write = sum(s.cache_creation_tokens for s in stats_list)
         total_cache_read = sum(s.cache_read_tokens for s in stats_list)
+        total_input = sum(s.input_tokens for s in stats_list) + total_cache_read + total_cache_write
         if total_input or total_output:
             tok_parts = [f"输入 {total_input:,}", f"输出 {total_output:,}"]
-            if total_cache_write:
-                tok_parts.append(f"缓存写入 {total_cache_write:,}")
-            if total_cache_read:
-                tok_parts.append(f"缓存读取 {total_cache_read:,}")
+            if total_cache_read or total_cache_write:
+                tok_parts.append(f"缓存 {total_cache_read:,}读 + {total_cache_write:,}写")
             sep = " / "
             print(f"  {_dim(f'Token 合计：{sep.join(tok_parts)}')}")
     for line in item_lines:
