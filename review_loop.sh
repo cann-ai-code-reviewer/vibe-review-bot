@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
 # 轻量轮询：每 60 秒检查一次 open PR 是否有新 push，有才跑 ai_reviewer.py
-# 用法：bash review_loop.sh <TOKEN> [INTERVAL] [REPO]
+# 用法：bash review_loop.sh [REPO] [TEAM_FILE]
+# 环境变量：REVIEW_TOKEN(必需) REVIEW_INTERVAL(默认120)
 # 无变化时每轮只 1 次 API 调用，避免 ~200 次/轮的浪费
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OWNER="cann"
+TOKEN="${REVIEW_TOKEN:?请设置环境变量 REVIEW_TOKEN}"
+INTERVAL="${REVIEW_INTERVAL:-120}"
+REPO="${1:-hcomm}"
+TEAM_FILE="${2:-$SCRIPT_DIR/teams/hccl.txt}"
+
 # 同时输出到终端和日志文件
-LOG_DIR="$(cd "$(dirname "$0")" && pwd)/log/run"
+LOG_DIR="$SCRIPT_DIR/log/run"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/review_loop_$(date +%Y%m%d_%H%M%S).txt"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "日志文件：$LOG_FILE"
-
-OWNER="cann"
-TOKEN="${1:?用法: $0 <TOKEN> [INTERVAL] [REPO]}"
-INTERVAL="${2:-60}"
-REPO="${3:-hcomm}"
 CACHE_FILE="/tmp/.review_loop_${OWNER}_${REPO}_shas"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEAM_FILE="$SCRIPT_DIR/team.txt"
+rm -f "$CACHE_FILE"
 
-# 从 team.txt 提取 gitcode 账号（最后一列，跳过标题行）
+# 从 team 文件提取 gitcode 账号（最后一列，跳过标题行）
 TEAM_ACCOUNTS=$(awk 'NR>1 {print $NF}' "$TEAM_FILE" | sort | paste -sd'|' -)
 
 while true; do

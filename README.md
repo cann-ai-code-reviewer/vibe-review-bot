@@ -23,6 +23,8 @@ Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 
 #### 准确率
 
+～70%
+
 #### 响应速度
 
 |推理指标|CodeReview指标|
@@ -134,7 +136,7 @@ python3 ai_reviewer.py --import-logs         # 导入历史审查日志到追踪
 ```
 ai_reviewer.py           # 核心：GitCode API、diff拉取、Claude调用、评论发布
 review_loop.sh           # 轮询守护脚本
-team.txt                 # 团队成员名单（姓名 工号 GitCode账号）
+teams/                   # 团队成员名单（按仓库命名，如 hcomm.txt）
 doc/best_practice.md     # 踩坑记录与部署经验
 log/                     # 检视产出，按仓库和维度组织：
   └── cann/
@@ -150,11 +152,11 @@ log/                     # 检视产出，按仓库和维度组织：
 |------|------|
 | `GITCODE_TOKEN` | GitCode个人访问令牌（环境变量或`--token`参数） |
 | `--repo` | 目标仓库名，同时决定本地路径`~/repo/cann/<repo>/`和GitCode API目标`cann/<repo>` |
-| `team.txt` | 团队成员名单，不纳入git托管，需自行创建。格式见下方说明 |
+| `teams/*.txt` | 团队成员名单，按仓库命名（如`hcomm.txt`），不纳入git托管，需自行创建。格式见下方说明 |
 | `MAX_DIFF_CHARS` | 单PR diff最大字符数（80K），防止超出Claude上下文窗口 |
 | `MAX_CLAUDE_TURNS` | 单次审查最大agentic回合数（40），平衡深度与成本 |
 
-`team.txt`格式：每行一人，首行为标题行，空行和`#`开头的行会被忽略。
+`teams/*.txt`格式：每行一人，首行为标题行，空行和`#`开头的行会被忽略。
 
 ```
 姓名      gitcode

@@ -125,7 +125,7 @@ MAX_DIR_FILES = 20
 # 审查结果最短有效长度（低于此值视为无效输出，触发重试）
 MIN_REVIEW_CHARS = 500
 # 小组人员名单（姓名 gitcode 账号，每行一人，首行为标题）
-TEAM_FILE = SCRIPT_DIR / "team.txt"
+TEAM_FILE = SCRIPT_DIR / "teams" / "hccl.txt"
 # 审查结果日志目录
 LOG_DIR = SCRIPT_DIR / "log"
 # 审查追踪数据库（存活性检测 + 采纳率统计）
@@ -874,7 +874,7 @@ def fetch_prs_by_authors(repo: RepoConfig, token: str, authors: list, count: int
 
 
 def load_team_members(filepath: Path = TEAM_FILE) -> tuple[list[str], dict[str, str]]:
-    """从 team.txt 读取小组成员的 gitcode 账号列表。
+    """从 team 文件读取小组成员的 gitcode 账号列表。
 
     文件格式：每行 '姓名 gitcode 账号'，首行为标题行。
     返回 (账号列表, {账号：姓名} 映射)。账号去重保序。
@@ -3264,9 +3264,9 @@ def main() -> None:
               %(prog)s --author lilin_137                 # 审查某用户的 open PR（默认最近 3 个）
               %(prog)s --author lilin_137 -n 0            # 审查某用户的全部 open PR
               %(prog)s --author user1 user2 -n 5          # 审查多个用户的 open PR（最多 5 个）
-              %(prog)s --team team.txt                    # 审查小组全员的 open PR
-              %(prog)s --team team.txt --count 0          # 审查小组全员的所有 open PR
-              %(prog)s --team team.txt --state merged -n 5  # 审查小组最近 5 个已合并 PR
+              %(prog)s --team teams/hccl.txt              # 审查小组全员的 open PR
+              %(prog)s --team teams/hccl.txt --count 0    # 审查小组全员的所有 open PR
+              %(prog)s --team teams/hccl.txt --state merged -n 5  # 审查小组最近 5 个已合并 PR
               %(prog)s --state merged --count 3           # 审查最近 3 个已合并 PR
               %(prog)s --pr 1150 --save                   # 审查并保存本地文件
               %(prog)s --pr 1150 --comment                # 审查并发布评论到 PR
@@ -3295,7 +3295,7 @@ def main() -> None:
     parser.add_argument("--dir", type=str, nargs="+", metavar="DIR",
                         help="审查整个目录（递归扫描 C/C++ 文件，生成合并报告，支持跨文件分析，无需 GitCode 令牌）")
     parser.add_argument("--team", type=Path, metavar="FILE",
-                        help="审查小组全员的 PR，需指定人员名单文件路径（如 --team team.txt）")
+                        help="审查小组全员的 PR，需指定人员名单文件路径（如 --team teams/hccl.txt）")
     parser.add_argument("--author", type=str, nargs="+", metavar="USER",
                         help="按用户名筛选 open PR（可多个，如 --author user1 user2）")
     parser.add_argument("-n", "--count", type=int, default=2,
