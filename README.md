@@ -271,6 +271,41 @@ log/                     # 检视产出，按仓库组织：
 
 #### 揭示问题
 
+AI代码审查的价值上限取决于规则的质量。通用规范（编码红线、Google C++ Style）能覆盖通用缺陷，但最高价值的发现来自项目特异性的缺陷模式——那些在特定代码库中反复出现、被同一批开发者反复犯的错误。这些模式不写在任何规范里，只沉淀在git历史中。
+
+repo-dig是一套从仓库完整git历史中系统化提炼缺陷模式的方法论。核心思路：每一次bugfix提交都是一个"这里曾经出过问题"的信号，大量信号聚合后会涌现出高频模式，这些模式比任何通用规范都更贴近项目的真实风险。
+
+七阶段流程：
+
+```
+git log全量提取 → 关键词筛选缺陷提交 → 逐条分析diff根因
+→ Revert专项(逃逸到主干的严重缺陷) → 热点文件与结构性风险
+→ 模式归纳分类 → 输出审查规则 → 打磨验证(抽样反查代码)
+```
+
+关键约束：全量分析不采样（低频高危缺陷只有全量才能捕获）；每条规则必须有commit hash证据链（可`git show`验证）；类别从数据中自然涌现，不预设框架。
+
+已在CANN生态6个仓库上完成：
+
+| 仓库 | 提交数 | 缺陷数 | 审查规则 |
+|------|--------|--------|----------|
+| ops-transformer | 1323 | 243 | 46条 |
+| ops-nn | 1474 | 380 | 39条 |
+| hcomm-dev | 488 | 162 | 40条 |
+| hccl | 153 | — | 48条 |
+| hccl-dev | 133 | 10 | 9条 |
+| ops-nn-dev | 2571 | 612 | 进行中 |
+
+三个跨仓库共性模式：
+
+1. 计算参数不一致。Host侧tiling与kernel侧独立计算workspace大小、buffer对齐、struct定义，物理分离缺乏编译期约束，导致两侧公式不匹配。ops-transformer中GQA的gSize缩放因子遗漏横跨6条独立commit反复出现。
+2. 边界条件处理不完整。除零（shape维度或中间计算结果为0）、空tensor四层联动缺失（aclnn/infershape/tiling/kernel任一层遗漏即崩溃）、整数溢出截断（int64→uint32）、null检查时序错误（先解引用后判空）。
+3. 并发安全缺乏系统性设计。全局/static变量无锁访问、TOCTOU竞态、资源释放顺序错误导致UAF、内存屏障缺失。hcomm-dev中15/18个热点文件存在并发问题。
+
+仓库特异性模式同样有价值：算子库的tiling参数爆炸（layout×模式×量化×稀疏的组合空间指数增长）、kernel指令位宽限制（DataCopy uint16_t上限65535）、硬件流水线同步（MTE2/MTE3/Vector/Scalar数据依赖）；通信库的API/ABI兼容性债务（extern "C"块用namespace、公共头文件含C++默认参数）、资源生命周期跨组件管理（设备内存/IPC handle/transport link/notify）。
+
+这些规则已整合到vibe-review skill的分仓标准文件中（`standards-project-hccl.md`、`standards-project-ops-transformer.md`），在审查对应仓库的PR时自动加载。效果：审查的发现从"命名不规范""缺少注释"这类低价值项，转向"tiling与kernel的workspace计算公式不一致""FinalizeChannels超时逻辑不可达导致死循环"这类真正的功能缺陷。
+
 #### 减少噪音
 
 当前vibe-review是纯LLM系统——所有检测逻辑编码在skill prompt里（48条HCCL规则 + 46条ops-transformer规则 + 部门红线28条），由Claude做模式识别和上下文推理。准确率80%意味着每5条有1条误报。
