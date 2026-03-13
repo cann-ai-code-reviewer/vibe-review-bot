@@ -92,6 +92,7 @@ python3 ai_reviewer.py --pr 1150 1144                      # 指定PR
 python3 ai_reviewer.py --author lilin_137 -n 0             # 某用户的全部open PR
 python3 ai_reviewer.py --state merged --count 3            # 已合并的PR
 python3 ai_reviewer.py --repo ops-transformer --pr 2071    # 其他CANN仓库
+python3 ai_reviewer.py --match PLZ                         # 只审查标题含PLZ的PR
 ```
 
 ### 输出控制
@@ -116,7 +117,8 @@ python3 ai_reviewer.py --dir src/framework/zero_copy/ --save
 ### 持续轮询
 
 ```bash
-bash review_loop.sh $GITCODE_TOKEN 60 hcomm
+bash review_loop.sh hcomm teams/hccl.txt          # 轮询审查全部PR
+bash review_loop.sh hcomm teams/hccl.txt PLZ      # 只审查标题含PLZ的PR
 ```
 
 每60秒检查team成员是否有新push，有则自动触发审查并发布评论。
@@ -129,7 +131,7 @@ python3 ai_reviewer.py --track --pr 1150    # 追踪单个PR的检视意见
 python3 ai_reviewer.py --import-logs        # 导入历史审查日志到追踪DB
 ```
 
-选项可组合：`--author`按用户筛选，`--count`/`-n`限制数量，`--state`筛选PR状态，`--dry-run`只拉取不审查。
+选项可组合：`--author`按用户筛选，`--count`/`-n`限制数量，`--state`筛选PR状态，`--match`按标题关键字筛选，`--dry-run`只拉取不审查。
 
 ## 项目结构
 
@@ -152,6 +154,7 @@ log/                      # 检视产出，按仓库组织：
 | ------------------ | ------------------------------------------------------------------------------------ |
 | `GITCODE_TOKEN`    | GitCode个人访问令牌（环境变量或`--token`参数）                                       |
 | `--repo`           | 目标仓库名，同时决定本地路径`~/repo/cann/<repo>/`和GitCode API目标`cann/<repo>`      |
+| `--match`          | 只审查标题包含该关键字的PR（全字匹配，大小写不敏感，`--pr`模式下忽略）               |
 | `teams/*.txt`      | 团队成员名单，按仓库命名（如`hcomm.txt`），不纳入git托管，需自行创建。格式见下方说明 |
 | `MAX_DIFF_CHARS`   | 单PR diff最大字符数(80K)，防止超出Claude上下文窗口                                   |
 | `MAX_CLAUDE_TURNS` | 单次审查最大agentic回合数(40)，平衡深度与成本                                        |
@@ -244,6 +247,7 @@ log/                      # 检视产出，按仓库组织：
 - [x] skill内容纳入仓库版本管理，添加setup.sh一键安装
 - [x] vibe-review skill提取为独立[npm包](https://www.npmjs.com/package/@tsukiyokai/vibe-review)（[GitHub](https://github.com/tsukiyokai/vibe-review-skill)）
 - [ ]支持Gitee V5 API
+- [x]标题关键字过滤(--match)，只审查标题含指定关键字的PR
 - [ ] webhook打通（跑个HTTP server来接收GitCode的webhook请求，部署复杂度UP）。
 - [x]从hcomm仓库git历史挖掘HCCL高价值缺陷模式：分析全部428次提交，识别84次缺陷提交，逐条分析根因和修复模式，产出48条审查规则覆盖12个缺陷类别（算法正确性、并发、内存、整数溢出、错误处理、资源生命周期等）+ 6条跨类别系统性风险规则。规则已写入skill的references/standards-project-hccl.md -- 260302
 - [x]用上述方法完成ops-transformer代码仓分析，输出references/standards-project-ops-transformer.md -- 260303

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 轻量轮询：每 60 秒检查一次 open PR 是否有新 push，有才跑 ai_reviewer.py
-# 用法：bash review_loop.sh [REPO] [TEAM_FILE]
+# 用法：bash review_loop.sh [REPO] [TEAM_FILE] [MATCH_KEYWORD]
 # 环境变量：REVIEW_TOKEN(必需) REVIEW_INTERVAL(默认120)
 # 无变化时每轮只 1 次 API 调用，避免 ~200 次/轮的浪费
 
@@ -12,6 +12,7 @@ TOKEN="${REVIEW_TOKEN:?请设置环境变量 REVIEW_TOKEN}"
 INTERVAL="${REVIEW_INTERVAL:-120}"
 REPO="${1:-hcomm}"
 TEAM_FILE="${2:-$SCRIPT_DIR/teams/hccl.txt}"
+MATCH_KEYWORD="${3:-}"
 
 # 同时输出到终端和日志文件
 LOG_DIR="$SCRIPT_DIR/log/run"
@@ -45,7 +46,8 @@ except:
     # 首次运行，跑一次完整审查
     printf "[%s] 首次运行，执行审查\n" "$(date +%H:%M:%S)"
     if FORCE_COLOR=1 PYTHONUNBUFFERED=1 python3 "$SCRIPT_DIR/ai_reviewer.py" \
-      --token "$TOKEN" --repo "$REPO" --team "$TEAM_FILE" -n 0 --comment; then
+      --token "$TOKEN" --repo "$REPO" --team "$TEAM_FILE" -n 0 --comment \
+      ${MATCH_KEYWORD:+--match "$MATCH_KEYWORD"}; then
       echo "$new_shas" > "$CACHE_FILE"
     else
       # 写空缓存避免重复走首次分支，下轮 SHA diff 会触发重试
@@ -61,6 +63,7 @@ except:
     printf "[%s] 检测到变更，执行审查\n" "$(date +%H:%M:%S)"
     if FORCE_COLOR=1 PYTHONUNBUFFERED=1 python3 "$SCRIPT_DIR/ai_reviewer.py" \
       --token "$TOKEN" --repo "$REPO" --team "$TEAM_FILE" -n 0 --comment \
+      ${MATCH_KEYWORD:+--match "$MATCH_KEYWORD"} \
       ${_changed:+--highlight "$_changed"}; then
       echo "$new_shas" > "$CACHE_FILE"
     else

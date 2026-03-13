@@ -3259,8 +3259,32 @@ def _review_single_pr(
     return PRResult(pr_number, pr_title, output_file, posted, stats, buf.getvalue())
 
 
+# ======================== PR 标题过滤 ========================
+def filter_prs_by_title(prs: list, match: str | None, is_exact_mode: bool) -> list:
+    """根据标题过滤 PR 列表。
+
+    过滤规则（按顺序应用）：
+      1. is_exact_mode=True（--pr 模式）时，跳过所有过滤，原样返回。
+      2. 过滤掉标题含 WIP 的 PR（大小写不敏感）。
+      3. 若 match 非 None，仅保留标题中包含该关键字的 PR（全字匹配，大小写不敏感）。
+    """
+    if is_exact_mode:
+        return prs
+
+    # WIP 过滤
+    filtered = [pr for pr in prs if "wip" not in pr.get("title", "").lower()]
+
+    # --match 关键字过滤（全字匹配）
+    if match is not None:
+        pattern = re.compile(r"\b" + re.escape(match) + r"\b", re.IGNORECASE)
+        filtered = [pr for pr in filtered if pattern.search(pr.get("title", ""))]
+
+    return filtered
+
+
 # ======================== 主流程 ========================
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
+    """构建命令行参数解析器。"""
     parser = argparse.ArgumentParser(
         description="代码审查工具：支持 GitCode PR 审查和本地文件审查（Claude Code）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -3345,6 +3369,13 @@ def main() -> None:
                         help="--stats 的统计天数范围（默认 30）")
     parser.add_argument("--highlight", type=str, default="",
                         help="高亮显示的 PR 编号（逗号分隔，如 --highlight 385,538），用于标记触发审查的变更 PR")
+    parser.add_argument("--match", type=str, default=None, metavar="KEYWORD",
+                        help="只审查标题包含该关键字的 PR（全字匹配，大小写不敏感，--pr 模式下忽略）")
+    return parser
+
+
+def main() -> None:
+    parser = _build_parser()
     args = parser.parse_args()
 
     global _review_model
@@ -3730,16 +3761,12 @@ def _main_pr_review(repo: RepoConfig, args: argparse.Namespace, token: str, save
     prs = collect_prs(repo, token, args)
     print(f"  {_dim(f'耗时：{_fmt_secs(time.monotonic() - t0)}')}")
 
-    # 批量模式下跳过标题含 [WIP] 的 PR（--pr 精确模式不过滤）
-    if not args.pr:
-        filtered = []
-        for pr in prs:
-            if "wip" in pr.get("title", "").lower():
-                pr_num = pr["number"]
-                print(f"  {_skip(f'PR #{pr_num} 标题含 WIP，跳过')}")
-            else:
-                filtered.append(pr)
-        prs = filtered
+    # 标题过滤：WIP 跳过 + --match 关键字匹配（--pr 精确模式不过滤）
+    before_count = len(prs)
+    prs = filter_prs_by_title(prs, getattr(args, "match", None), is_exact_mode=bool(args.pr))
+    skipped = before_count - len(prs)
+    if skipped:
+        print(f"  {_skip(f'标题过滤：跳过 {skipped} 个 PR（WIP 或不匹配 --match）')}")
 
     if not prs:
         print(f"  {_warn('未找到匹配的 PR，退出。')}")
