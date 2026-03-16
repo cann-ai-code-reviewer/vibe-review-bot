@@ -3354,7 +3354,7 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="强制审查，忽略已审查过最新提交的判断")
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL,
                         help=f"审查使用的模型（默认 {DEFAULT_MODEL}）")
-    parser.add_argument("--repo", type=str, default="hcomm", dest="target_repo",
+    parser.add_argument("--repo", type=str, default=cfg.default_repo, dest="target_repo",
                         help="目标仓库，支持 owner/name（如 myorg/myrepo）或仅 name（默认 owner=cann）")
     parser.add_argument("--clean", type=int, nargs="+", metavar="NUM",
                         help="清除指定 PR 的所有 AI 审查评论（可多个，如 --clean 1150 1144）")
