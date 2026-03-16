@@ -9,20 +9,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # 从 config.yaml 读取配置（SCRIPT_DIR 通过环境变量传递，避免路径中特殊字符问题）
 eval "$(VIBE_SCRIPT_DIR="$SCRIPT_DIR" python3 -c "
+def _sh(v):
+    return \"'\" + str(v).replace(\"'\", \"'\\\\''\" ) + \"'\"
 import yaml, pathlib, os
 p = pathlib.Path(os.environ['VIBE_SCRIPT_DIR']) / 'config.yaml'
 cfg = yaml.safe_load(p.read_text()) if p.exists() else {}
-print('CFG_OWNER=' + str(cfg.get('owner', 'cann')))
-print('CFG_DEFAULT_REPO=' + str(cfg.get('default_repo', 'hcomm')))
-print('CFG_API_BASE=' + str(cfg.get('api_base', 'https://api.gitcode.com/api/v5')))
+print('CFG_OWNER=' + _sh(cfg.get('owner', 'cann')))
+print('CFG_DEFAULT_REPO=' + _sh(cfg.get('default_repo', 'hcomm')))
+print('CFG_API_BASE=' + _sh(cfg.get('api_base', 'https://api.gitcode.com/api/v5')))
 log = cfg.get('log_dir') or os.environ['VIBE_SCRIPT_DIR'] + '/log'
-print('CFG_LOG_DIR=' + log)
+print('CFG_LOG_DIR=' + _sh(log))
+team = cfg.get('team_file') or os.environ['VIBE_SCRIPT_DIR'] + '/teams/hccl.txt'
+print('CFG_TEAM_FILE=' + _sh(team))
 " 2>/dev/stderr)" || { echo "ERROR: failed to read config.yaml (is pyyaml installed?)"; exit 1; }
 OWNER="$CFG_OWNER"
 TOKEN="${GITCODE_TOKEN:?请设置环境变量 GITCODE_TOKEN}"
 INTERVAL="${REVIEW_INTERVAL:-120}"
 REPO="${1:-$CFG_DEFAULT_REPO}"
-TEAM_FILE="${2:-$SCRIPT_DIR/teams/hccl.txt}"
+TEAM_FILE="${2:-$CFG_TEAM_FILE}"
 MATCH_KEYWORD="${3:-}"
 
 # 同时输出到终端和日志文件

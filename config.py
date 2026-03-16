@@ -38,7 +38,11 @@ def load_config(script_dir: Path) -> AppConfig:
         val = data.get(f.name)
         if val is None or val == "":
             continue
-        setattr(cfg, f.name, val)
+        field_type = type(getattr(AppConfig(), f.name))
+        try:
+            setattr(cfg, f.name, field_type(val))
+        except (ValueError, TypeError):
+            pass  # keep default if coercion fails
     return cfg
 
 
