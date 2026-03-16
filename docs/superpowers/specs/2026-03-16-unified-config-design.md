@@ -216,7 +216,7 @@ print('CFG_DEFAULT_REPO=' + str(cfg.get('default_repo', 'hcomm')))
 print('CFG_API_BASE=' + str(cfg.get('api_base', 'https://api.gitcode.com/api/v5')))
 log = cfg.get('log_dir') or os.environ['VIBE_SCRIPT_DIR'] + '/log'
 print('CFG_LOG_DIR=' + log)
-" 2>&1)" || { echo "ERROR: failed to read config.yaml (is pyyaml installed?)"; exit 1; }
+" 2>/dev/stderr)" || { echo "ERROR: failed to read config.yaml (is pyyaml installed?)"; exit 1; }
 ```
 
 Then replace hardcoded values:
