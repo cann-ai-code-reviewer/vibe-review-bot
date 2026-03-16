@@ -117,6 +117,7 @@ python3 ai_reviewer.py --dir src/framework/zero_copy/ --save
 ### 持续轮询
 
 ```bash
+export GITCODE_TOKEN=your_token
 bash review_loop.sh hcomm teams/hccl.txt          # 轮询审查全部PR
 bash review_loop.sh hcomm teams/hccl.txt PLZ      # 只审查标题含PLZ的PR
 ```
@@ -152,12 +153,11 @@ log/                      # 检视产出，按仓库组织：
 
 | 配置               | 说明                                                                                 |
 | ------------------ | ------------------------------------------------------------------------------------ |
-| `GITCODE_TOKEN`    | GitCode个人访问令牌（环境变量或`--token`参数）                                       |
+| `GITCODE_TOKEN`    | GitCode 个人访问令牌（环境变量或 `--token` 参数，不写入 config.yaml）                |
+| `config.yaml`      | 所有可调参数（owner、repos_root、api_base、max_diff_chars 等），见文件注释            |
 | `--repo`           | 目标仓库名，同时决定本地路径`~/repo/cann/<repo>/`和GitCode API目标`cann/<repo>`      |
 | `--match`          | 只审查标题包含该关键字的PR（全字匹配，大小写不敏感，`--pr`模式下忽略）               |
 | `teams/*.txt`      | 团队成员名单，按仓库命名（如`hcomm.txt`），不纳入git托管，需自行创建。格式见下方说明 |
-| `MAX_DIFF_CHARS`   | 单PR diff最大字符数(80K)，防止超出Claude上下文窗口                                   |
-| `MAX_CLAUDE_TURNS` | 单次审查最大agentic回合数(40)，平衡深度与成本                                        |
 
 `teams/*.txt`格式：每行一人，首行为标题行，空行和`#`开头的行会被忽略。
 
