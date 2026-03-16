@@ -240,6 +240,54 @@ intentionally unifies both to `api.gitcode.com` via `CFG_API_BASE`.
 
 ---
 
+## Token Unification: REVIEW_TOKEN → GITCODE_TOKEN
+
+`review_loop.sh` currently uses `REVIEW_TOKEN` while `ai_reviewer.py` uses `GITCODE_TOKEN`.
+They represent the same credential. Unify to `GITCODE_TOKEN` — do **not** add token to
+`config.yaml` (credentials must not be committed to version control).
+
+Changes to `review_loop.sh`:
+
+```bash
+# Before
+TOKEN="${REVIEW_TOKEN:?请设置环境变量 REVIEW_TOKEN}"
+
+# After
+TOKEN="${GITCODE_TOKEN:?请设置环境变量 GITCODE_TOKEN}"
+```
+
+Also update the comment on line 4:
+
+```bash
+# Before: # 环境变量：REVIEW_TOKEN(必需) REVIEW_INTERVAL(默认120)
+# After:  # 环境变量：GITCODE_TOKEN(必需) REVIEW_INTERVAL(默认120)
+```
+
+---
+
+## Changes to `README.md`
+
+1. **持续轮询** usage example: add token export before the command.
+
+```bash
+export GITCODE_TOKEN=your_token
+bash review_loop.sh hcomm teams/hccl.txt          # 轮询审查全部PR
+bash review_loop.sh hcomm teams/hccl.txt PLZ      # 只审查标题含PLZ的PR
+```
+
+2. **配置项** table: replace the two hardcoded-constant rows with a `config.yaml` row,
+   and remove any mention of `REVIEW_TOKEN`.
+
+| 配置 | 说明 |
+| --- | --- |
+| `GITCODE_TOKEN` | GitCode 个人访问令牌（环境变量或 `--token` 参数，不放入 config.yaml） |
+| `config.yaml` | 所有可调参数（owner、repos_root、api_base、max_diff_chars 等），见文件注释 |
+| `--repo` | 目标仓库名，同时决定本地路径和 GitCode API 目标 |
+| `--match` | 只审查标题包含该关键字的 PR |
+| `teams/*.txt` | 团队成员名单，不纳入 git 托管，需自行创建 |
+
+---
+
 ## Testing
 
 - Existing tests in `tests/test_match_filter.py` should continue to pass unchanged
