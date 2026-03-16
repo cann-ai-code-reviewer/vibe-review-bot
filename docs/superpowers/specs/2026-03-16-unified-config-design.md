@@ -47,6 +47,16 @@ Code defaults → config.yaml → command-line arguments
 
 ---
 
+## Dependencies
+
+PyYAML is required. Add `pyyaml>=6.0` to a new `requirements.txt` at the project root.
+
+```
+pyyaml>=6.0
+```
+
+---
+
 ## New Files
 
 ### `config.yaml` (project root)
@@ -61,7 +71,7 @@ default_repo: hcomm                              # --repo 的默认值
 repos_root: ""                                   # 本地仓库根目录，空表示脚本目录往上三级
 
 # ── API 配置 ──────────────────────────────────────────
-api_base: "https://api.gitcode.com/api/v5"       # GitCode API base URL
+api_base: "https://api.gitcode.com/api/v5"       # GitCode API base URL（末尾不含 /）
 
 # ── 模型配置 ──────────────────────────────────────────
 default_model: "claude-opus-4-6"                 # 默认审查模型
@@ -109,14 +119,21 @@ class AppConfig:
 
 
 def load_config(script_dir: Path) -> AppConfig:
+    """Load config.yaml from script_dir, falling back to dataclass defaults."""
     cfg = AppConfig()
     config_path = script_dir / "config.yaml"
-    if config_path.exists():
+    if not config_path.exists():
+        return cfg
+    try:
         import yaml
-        data = yaml.safe_load(config_path.read_text()) or {}
-        for f in fields(cfg):
-            if f.name in data and data[f.name] not in (None, ""):
-                setattr(cfg, f.name, data[f.name])
+    except ImportError:
+        raise ImportError("PyYAML is required: pip install pyyaml") from None
+    data = yaml.safe_load(config_path.read_text()) or {}
+    for f in fields(cfg):
+        val = data.get(f.name)
+        if val is None or val == "":
+            continue
+        setattr(cfg, f.name, val)
     return cfg
 
 
@@ -124,11 +141,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 cfg: AppConfig = load_config(SCRIPT_DIR)
 ```
 
+Key notes:
+- `val is None or val == ""` guards string "empty = use default" without accidentally dropping integer `0`.
+- `ImportError` with a clear message if PyYAML is missing.
+
 ---
 
 ## Changes to `ai_reviewer.py`
 
-1. Add at top: `from config import cfg`
+1. Add at top: `from config import cfg, SCRIPT_DIR as CONFIG_SCRIPT_DIR`
 2. Replace module-level constants with reads from `cfg`:
 
 | Old constant | New source |
@@ -142,29 +163,60 @@ cfg: AppConfig = load_config(SCRIPT_DIR)
 | `MAX_PARALLEL_REVIEWS` | `cfg.max_parallel_reviews` |
 | `MAX_DIR_FILES` | `cfg.max_dir_files` |
 | `LOG_DIR` | `Path(cfg.log_dir) if cfg.log_dir else SCRIPT_DIR / "log"` |
+| `TRACKING_DB` | re-derived as `LOG_DIR / "review_tracking.db"` after `LOG_DIR` is updated |
 | `TEAM_FILE` | `Path(cfg.team_file) if cfg.team_file else SCRIPT_DIR / "teams" / "hccl.txt"` |
 | `DEFAULT_MODEL` | `cfg.default_model` |
 
 3. `--repo` argument default value: `cfg.default_repo`
 4. Owner parsing fallback: `cfg.owner`
 
+### RepoConfig log path properties
+
+`RepoConfig.pr_log_dir`, `file_log_dir`, `dir_log_dir` and `_migrate_legacy_logs` currently
+hardcode `SCRIPT_DIR / "log"` directly. They must be updated to use the config-driven `LOG_DIR`:
+
+```python
+@property
+def pr_log_dir(self) -> Path:
+    return LOG_DIR / self.owner / self.name
+
+@property
+def file_log_dir(self) -> Path:
+    return LOG_DIR / self.owner / self.name / "by_file"
+
+@property
+def dir_log_dir(self) -> Path:
+    return LOG_DIR / self.owner / self.name / "by_dir"
+```
+
+`_migrate_legacy_logs` has two paths to fix. Currently:
+
+```python
+old = LOG_DIR / subdir                                          # already uses LOG_DIR
+new = SCRIPT_DIR / "log" / repo.owner / repo.name / subdir    # hardcoded — must change
+```
+
+After the change, `new` must become `LOG_DIR / repo.owner / repo.name / subdir`.
+
 ---
 
 ## Changes to `review_loop.sh`
 
-Add a block after `SCRIPT_DIR` is set that reads `config.yaml` via Python and exports shell variables:
+Add a block after `SCRIPT_DIR` is set that reads `config.yaml` via Python and exports shell
+variables. `SCRIPT_DIR` is passed via environment variable (not string interpolation) to avoid
+issues with paths containing shell metacharacters:
 
 ```bash
-eval "$(python3 -c "
-import yaml, pathlib, sys
-p = pathlib.Path('$SCRIPT_DIR/config.yaml')
+eval "$(VIBE_SCRIPT_DIR="$SCRIPT_DIR" python3 -c "
+import yaml, pathlib, os
+p = pathlib.Path(os.environ['VIBE_SCRIPT_DIR']) / 'config.yaml'
 cfg = yaml.safe_load(p.read_text()) if p.exists() else {}
 print('CFG_OWNER=' + str(cfg.get('owner', 'cann')))
 print('CFG_DEFAULT_REPO=' + str(cfg.get('default_repo', 'hcomm')))
 print('CFG_API_BASE=' + str(cfg.get('api_base', 'https://api.gitcode.com/api/v5')))
-log = cfg.get('log_dir', '') or '$SCRIPT_DIR/log'
+log = cfg.get('log_dir') or os.environ['VIBE_SCRIPT_DIR'] + '/log'
 print('CFG_LOG_DIR=' + log)
-")"
+" 2>&1)" || { echo "ERROR: failed to read config.yaml (is pyyaml installed?)"; exit 1; }
 ```
 
 Then replace hardcoded values:
@@ -174,8 +226,17 @@ Then replace hardcoded values:
 | `OWNER="cann"` | `OWNER="$CFG_OWNER"` |
 | `REPO="${1:-hcomm}"` | `REPO="${1:-$CFG_DEFAULT_REPO}"` |
 | `LOG_DIR="$SCRIPT_DIR/log/run"` | `LOG_DIR="$CFG_LOG_DIR/run"` |
-| `https://gitcode.com/api/v5/...` | Use `$CFG_API_BASE` (strip trailing `/api/v5`, use base domain) |
 | `CACHE_FILE="/tmp/..."` | `CACHE_FILE="$CFG_LOG_DIR/.review_loop_${OWNER}_${REPO}_shas"` |
+| `https://gitcode.com/api/v5/repos/...` | `${CFG_API_BASE}/repos/...` |
+
+Note: `CFG_API_BASE` is the full API base including `/api/v5` (e.g.
+`https://api.gitcode.com/api/v5`). The shell script builds the full URL as
+`${CFG_API_BASE}/repos/${OWNER}/${REPO}/pulls?...` — consistent with how
+`ai_reviewer.py` uses `GITCODE_API_BASE`.
+
+Note on hostname: `review_loop.sh` currently uses `https://gitcode.com/api/v5`
+while `ai_reviewer.py` uses `https://api.gitcode.com/api/v5`. This substitution
+intentionally unifies both to `api.gitcode.com` via `CFG_API_BASE`.
 
 ---
 
@@ -184,3 +245,4 @@ Then replace hardcoded values:
 - Existing tests in `tests/test_match_filter.py` should continue to pass unchanged
 - Manual smoke test: run with default `config.yaml`, verify behavior identical to current
 - Manual override test: change `owner`/`default_repo` in `config.yaml`, verify tool uses new values
+- Edge case: set `max_parallel_reviews: 0` in `config.yaml`, verify it is respected (not silently dropped)
