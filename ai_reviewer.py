@@ -164,22 +164,22 @@ class RepoConfig:
 
     @property
     def pr_log_dir(self) -> Path:
-        return SCRIPT_DIR / "log" / self.owner / self.name
+        return LOG_DIR / self.owner / self.name
 
     @property
     def file_log_dir(self) -> Path:
-        return SCRIPT_DIR / "log" / self.owner / self.name / "by_file"
+        return LOG_DIR / self.owner / self.name / "by_file"
 
     @property
     def dir_log_dir(self) -> Path:
-        return SCRIPT_DIR / "log" / self.owner / self.name / "by_dir"
+        return LOG_DIR / self.owner / self.name / "by_dir"
 
 
 def _migrate_legacy_logs(repo: RepoConfig) -> None:
     """一次性迁移旧的扁平 log 目录到按仓库分层的结构。"""
     for subdir in ("by_file", "by_dir"):
         old = LOG_DIR / subdir
-        new = SCRIPT_DIR / "log" / repo.owner / repo.name / subdir
+        new = LOG_DIR / repo.owner / repo.name / subdir
         if old.exists() and not new.exists():
             new.parent.mkdir(parents=True, exist_ok=True)
             old.rename(new)
