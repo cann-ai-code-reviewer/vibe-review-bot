@@ -1,7 +1,4 @@
-import pytest
-from pathlib import Path
-from unittest.mock import patch
-import tempfile, os, textwrap
+import textwrap
 
 
 def _write_yaml(tmp_path, content):
