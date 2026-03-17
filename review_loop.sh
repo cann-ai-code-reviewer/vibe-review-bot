@@ -16,10 +16,9 @@ p = pathlib.Path(os.environ['VIBE_SCRIPT_DIR']) / 'config.yaml'
 cfg = yaml.safe_load(p.read_text()) if p.exists() else {}
 print('CFG_OWNER=' + _sh(cfg.get('owner', 'cann')))
 print('CFG_DEFAULT_REPO=' + _sh(cfg.get('default_repo', 'hcomm')))
-print('CFG_API_BASE=' + _sh(cfg.get('api_base', 'https://api.gitcode.com/api/v5')))
-log = cfg.get('log_dir') or os.environ['VIBE_SCRIPT_DIR'] + '/log'
-print('CFG_LOG_DIR=' + _sh(log))
-team = cfg.get('team_file') or os.environ['VIBE_SCRIPT_DIR'] + '/teams/hccl.txt'
+print('CFG_API_BASE=' + _sh(cfg.get('api_base') or 'https://api.gitcode.com/api/v5'))
+print('CFG_LOG_DIR=' + _sh(cfg.get('log_dir')))
+team = cfg.get('team_file')
 print('CFG_TEAM_FILE=' + _sh(team))
 " 2>/dev/stderr)" || { echo "ERROR: failed to read config.yaml (is pyyaml installed?)"; exit 1; }
 OWNER="$CFG_OWNER"

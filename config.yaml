@@ -4,7 +4,7 @@
 # ── 仓库配置 ──────────────────────────────────────────
 owner: cann                                      # 默认 owner（--repo 未含 / 时使用）
 default_repo: hcomm                              # --repo 的默认值
-repos_root: ""                                   # 本地仓库根目录，空表示脚本目录往上三级
+repos_root: ""                                   # 本地仓库根目录，默认为脚本目录往上三级（即 <script_dir>/../../..）
 
 # ── API 配置 ──────────────────────────────────────────
 api_base: "https://api.gitcode.com/api/v5"       # GitCode API base URL（末尾不含 /）
@@ -20,5 +20,5 @@ max_parallel_reviews: 4     # 最大并行审查数
 max_dir_files: 20           # 目录模式最大文件数
 
 # ── 路径配置 ──────────────────────────────────────────
-log_dir: ""                  # 日志目录，空表示脚本目录下的 log/
-team_file: ""                # 默认团队文件，空表示 teams/hccl.txt
+log_dir: ""                  # 日志目录，默认为 <script_dir>/log/
+team_file: ""                # 默认团队文件，默认为 <script_dir>/teams/hccl.txt

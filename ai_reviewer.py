@@ -89,7 +89,7 @@ from config import cfg, SCRIPT_DIR
 GITCODE_API_BASE = cfg.api_base
 OWNER = cfg.owner
 # REPO 和 REPO_URL 改为运行时从 --repo 参数确定，见 RepoConfig
-REPOS_ROOT = Path(cfg.repos_root) if cfg.repos_root else SCRIPT_DIR.parent.parent.parent
+REPOS_ROOT = Path(cfg.repos_root)
 # 单个 PR diff 最大字符数（防止超出 Claude 上下文窗口）
 MAX_DIFF_CHARS = cfg.max_diff_chars
 # vibe-review skill 路径
@@ -126,9 +126,9 @@ MAX_DIR_FILES = cfg.max_dir_files
 # 审查结果最短有效长度（低于此值视为无效输出，触发重试）
 MIN_REVIEW_CHARS = cfg.min_review_chars
 # 小组人员名单（姓名 gitcode 账号，每行一人，首行为标题）
-TEAM_FILE = Path(cfg.team_file) if cfg.team_file else SCRIPT_DIR / "teams" / "hccl.txt"
+TEAM_FILE = Path(cfg.team_file)
 # 审查结果日志目录
-LOG_DIR = Path(cfg.log_dir) if cfg.log_dir else SCRIPT_DIR / "log"
+LOG_DIR = Path(cfg.log_dir)
 # 审查追踪数据库（存活性检测 + 采纳率统计）
 TRACKING_DB = LOG_DIR / "review_tracking.db"
 
