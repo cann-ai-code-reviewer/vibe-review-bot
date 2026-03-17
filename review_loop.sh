@@ -1,26 +1,40 @@
 #!/usr/bin/env bash
 # 轻量轮询：每 60 秒检查一次 open PR 是否有新 push，有才跑 ai_reviewer.py
 # 用法：bash review_loop.sh [REPO] [TEAM_FILE] [MATCH_KEYWORD]
-# 环境变量：REVIEW_TOKEN(必需) REVIEW_INTERVAL(默认120)
+# 环境变量：GITCODE_TOKEN(必需) REVIEW_INTERVAL(默认120)
 # 无变化时每轮只 1 次 API 调用，避免 ~200 次/轮的浪费
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-OWNER="cann"
-TOKEN="${REVIEW_TOKEN:?请设置环境变量 REVIEW_TOKEN}"
+# 从 config.yaml 读取配置（SCRIPT_DIR 通过环境变量传递，避免路径中特殊字符问题）
+eval "$(VIBE_SCRIPT_DIR="$SCRIPT_DIR" python3 -c "
+def _sh(v):
+    return \"'\" + str(v).replace(\"'\", \"'\\\\''\" ) + \"'\"
+import yaml, pathlib, os
+p = pathlib.Path(os.environ['VIBE_SCRIPT_DIR']) / 'config.yaml'
+cfg = yaml.safe_load(p.read_text()) if p.exists() else {}
+print('CFG_OWNER=' + _sh(cfg.get('owner', 'cann')))
+print('CFG_DEFAULT_REPO=' + _sh(cfg.get('default_repo', 'hcomm')))
+print('CFG_API_BASE=' + _sh(cfg.get('api_base') or 'https://api.gitcode.com/api/v5'))
+print('CFG_LOG_DIR=' + _sh(cfg.get('log_dir')))
+team = cfg.get('team_file')
+print('CFG_TEAM_FILE=' + _sh(team))
+" 2>/dev/stderr)" || { echo "ERROR: failed to read config.yaml (is pyyaml installed?)"; exit 1; }
+OWNER="$CFG_OWNER"
+TOKEN="${GITCODE_TOKEN:?请设置环境变量 GITCODE_TOKEN}"
 INTERVAL="${REVIEW_INTERVAL:-120}"
-REPO="${1:-hcomm}"
-TEAM_FILE="${2:-$SCRIPT_DIR/teams/hccl.txt}"
+REPO="${1:-$CFG_DEFAULT_REPO}"
+TEAM_FILE="${2:-$CFG_TEAM_FILE}"
 MATCH_KEYWORD="${3:-}"
 
 # 同时输出到终端和日志文件
-LOG_DIR="$SCRIPT_DIR/log/run"
+LOG_DIR="$CFG_LOG_DIR/run"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/review_loop_$(date +%Y%m%d_%H%M%S).txt"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "日志文件：$LOG_FILE"
-CACHE_FILE="/tmp/.review_loop_${OWNER}_${REPO}_shas"
+CACHE_FILE="$CFG_LOG_DIR/.review_loop_${OWNER}_${REPO}_shas"
 rm -f "$CACHE_FILE"
 
 # 从 team 文件提取 gitcode 账号（最后一列，跳过标题行）
@@ -29,7 +43,7 @@ TEAM_ACCOUNTS=$(awk 'NR>1 {print $NF}' "$TEAM_FILE" | sort | paste -sd'|' -)
 while true; do
   # 1 次 API 调用：拉 open PR 列表，只追踪 team 成员的 PR
   new_shas=$(curl -s -H "PRIVATE-TOKEN: $TOKEN" \
-    "https://gitcode.com/api/v5/repos/${OWNER}/${REPO}/pulls?state=open&per_page=100" \
+    "${CFG_API_BASE}/repos/${OWNER}/${REPO}/pulls?state=open&per_page=100" \
     | python3 -c "
 import sys, json
 team = set('$TEAM_ACCOUNTS'.split('|'))
