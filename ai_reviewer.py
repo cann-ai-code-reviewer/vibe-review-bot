@@ -3770,7 +3770,7 @@ def _main_pr_review(repo: RepoConfig, args: argparse.Namespace, token: str, save
         print(f"  {_skip(f'标题过滤：跳过 {skipped} 个 PR（WIP 或不匹配 --match）')}")
 
     if not prs:
-        print(f"  {_warn('未找到匹配的 PR，退出。')}")
+        print(f"  {_warn('未找到匹配的 PR，本轮跳过。')}")
         sys.exit(0)
 
     # 按变更规模升序排列（短任务优先，减少总等待时间）

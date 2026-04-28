@@ -3,7 +3,7 @@
 
 # ── 仓库配置 ──────────────────────────────────────────
 owner: cann                                      # 默认 owner（--repo 未含 / 时使用）
-default_repo: hcomm                              # --repo 的默认值
+default_repo: ops-transformer                    # --repo 的默认值
 repos_root: ""                                   # 本地仓库根目录，默认为脚本目录往上三级（即 <script_dir>/../../..）
 
 # ── API 配置 ──────────────────────────────────────────
