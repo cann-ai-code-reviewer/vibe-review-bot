@@ -965,9 +965,17 @@ def fetch_pr_files(repo: RepoConfig, token: str, pr_number: int) -> list:
     if data is None:
         return []
     if isinstance(data, list):
-        return data
-    # 兼容可能的嵌套格式
-    return data.get("files", data.get("data", []))
+        files = data
+    else:
+        # 兼容可能的嵌套格式
+        files = data.get("files", data.get("data", []))
+    # Gitee 返回的 additions/deletions 可能是字符串，统一转为 int
+    for f in files:
+        for key in ("additions", "deletions"):
+            val = f.get(key, 0)
+            if isinstance(val, str):
+                f[key] = int(val) if val else 0
+    return files
 
 
 # ======================== Diff 格式化 ========================
