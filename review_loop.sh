@@ -47,13 +47,21 @@ echo "日志文件：$LOG_FILE"
 CACHE_FILE="$CFG_LOG_DIR/.review_loop_${OWNER}_${REPO}_shas"
 rm -f "$CACHE_FILE"
 
-# 从 team 文件提取 gitcode 账号（最后一列，跳过标题行）
+# 从 team 文件提取平台账号（最后一列，跳过标题行）
 TEAM_ACCOUNTS=$(awk 'NR>1 {print $NF}' "$TEAM_FILE" | sort | paste -sd'|' -)
 
 while true; do
   # 1 次 API 调用：拉 open PR 列表，只追踪 team 成员的 PR
-  new_shas=$(curl -s -H "PRIVATE-TOKEN: $TOKEN" \
-    "${CFG_API_BASE}/repos/${OWNER}/${REPO}/pulls?state=open&per_page=100" \
+  # 平台认证差异：gitee → access_token URL 参数；gitcode → PRIVATE-TOKEN header
+  if [ "$CFG_PLATFORM" = "gitee" ]; then
+    _api_url="${CFG_API_BASE}/repos/${OWNER}/${REPO}/pulls?state=open&per_page=100&access_token=${TOKEN}"
+    _curl_opts=()
+  else
+    _api_url="${CFG_API_BASE}/repos/${OWNER}/${REPO}/pulls?state=open&per_page=100"
+    _curl_opts=(-H "PRIVATE-TOKEN: $TOKEN")
+  fi
+
+  new_shas=$(curl -s "${_curl_opts[@]}" "$_api_url" \
     | python3 -c "
 import sys, json
 team = set('$TEAM_ACCOUNTS'.split('|'))
