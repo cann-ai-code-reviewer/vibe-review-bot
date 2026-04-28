@@ -146,9 +146,10 @@ PR_REVIEW_TOOLS = [
 @dataclass
 class RepoConfig:
     """目标仓库配置（从 --repo 参数派生）。"""
-    name: str       # "hcomm-dev"
-    owner: str      # "cann"
-    path: Path      # ~/repo/cann/hcomm-dev
+    name: str           # "hcomm-dev"
+    owner: str          # "cann"
+    path: Path          # ~/repo/cann/hcomm-dev
+    platform: str = "gitcode"  # 平台：gitcode / gitee
 
     @property
     def full_name(self) -> str:
@@ -156,11 +157,18 @@ class RepoConfig:
 
     @property
     def url(self) -> str:
+        if self.platform == "gitee":
+            return f"https://gitee.com/{self.owner}/{self.name}"
         return f"https://gitcode.com/{self.owner}/{self.name}"
 
     @property
     def api_prefix(self) -> str:
         return f"/repos/{self.owner}/{self.name}"
+
+    @property
+    def pr_web_path(self) -> str:
+        """PR 在 Web 端的 URL 路径片段：gitee → pulls, gitcode → merge_requests"""
+        return "pulls" if self.platform == "gitee" else "merge_requests"
 
     @property
     def pr_log_dir(self) -> Path:
@@ -1013,7 +1021,7 @@ def format_diff_for_review(repo: RepoConfig, pr: dict, files: list) -> str:
         f"",
         f"- 作者：{author}",
         f"- 分支：{head_ref} -> {base_ref}",
-        f"- 链接：{repo.url}/merge_requests/{pr_number}",
+        f"- 链接：{repo.url}/{repo.pr_web_path}/{pr_number}",
     ]
     if body:
         lines.append(f"- 描述：{body[:500]}")
@@ -1076,51 +1084,57 @@ def is_cpp_file(filename: str) -> bool:
 
 
 # ======================== Diff Position 计算 ========================
-def _build_diff_position_map(raw_diff: str) -> dict[int, tuple[int, bool]]:
+def _build_diff_position_map(raw_diff: str, platform: str = "gitcode") -> dict[int, tuple[int, bool]]:
     """解析单个文件的 raw diff，建立行号→position 映射。
 
     返回：{new_line_number: (position, is_added)}
-    - position: GitCode API 的 diff 相对行号（从 1 开始）
+    - position:
+      - GitCode: 源码行号（文件中的绝对行号，向后兼容）
+      - Gitee: diff 块内相对行号（从 @@ 后第一行开始为 1，每个块独立）
     - is_added: True 表示 '+' 行（新增），False 表示上下文行
 
     算法说明：
     - 首个 @@ 行不计入 position（position 从其后第一行开始为 1）
-    - 后续 @@ 行本身计入 position（占 1 个 position）
+    - 后续 @@ 行本身不计入 position（Gitee 每个块独立计数）
     - '-' 行（删除行）计入 position 但不增加 new_line
     - '+' 行（新增行）计入 position 且增加 new_line
     - 上下文行（无 +/-）计入 position 且增加 new_line
     """
     mapping: dict[int, tuple[int, bool]] = {}
-    position = 0
     new_line = 0
-    first_hunk = True
+    in_hunk = False
+    gitee_position = 0  # platform: gitee 专用计数器
 
     for line in raw_diff.split("\n"):
-        if not line and not first_hunk:
+        if not line and in_hunk:
             continue  # 跳过尾部空行（split 产物）
         if line.startswith("@@"):
             # 解析 @@ -old_start,old_count +new_start,new_count @@
             match = re.search(r"\+(\d+)", line)
             if match:
                 new_line = int(match.group(1)) - 1
-            if first_hunk:
-                first_hunk = False
-            else:
-                position += 1
+            in_hunk = True
+            if platform == "gitee":
+                gitee_position = 0  # 每个 diff 块重新从 0 开始
             continue
 
-        if first_hunk:
-            # 跳过 diff header（--- a/... / +++ b/... 等）
+        if not in_hunk:
             continue
 
-        position += 1
+        if platform == "gitee":
+            gitee_position += 1
+            position = gitee_position
+        else:
+            # platform: gitcode — position = 源码行号
+            position = new_line + 1
+
         if line.startswith("+"):
             new_line += 1
             mapping[new_line] = (position, True)
         elif line.startswith("-"):
             pass  # 删除行不增加 new_line
         elif line.startswith("\\"):
-            pass  # "\ No newline at end of file" 等元数据行，计 position 但不增加 new_line
+            pass  # "\ No newline at end of file" 等元数据行
         else:
             new_line += 1
             mapping[new_line] = (position, False)
@@ -1570,7 +1584,7 @@ def write_review_md(repo: RepoConfig, pr: dict, review_text: str, output_dir: Pa
         f"|------|------|\n"
         f"| 标题 | {pr_title} |\n"
         f"| 作者 | {author} |\n"
-        f"| 链接 | [{repo.url}/merge_requests/{pr_number}]({repo.url}/merge_requests/{pr_number}) |\n"
+        f"| 链接 | [{repo.url}/{repo.pr_web_path}/{pr_number}]({repo.url}/{repo.pr_web_path}/{pr_number}) |\n"
         f"| 审查时间 | {now} |\n"
         f"| 审查工具 | Claude Code (`vibe-review` skill) |\n"
         f"| 基线提交 | {head_sha[:12]} |{summary_row}\n\n"
@@ -2819,6 +2833,12 @@ def _resolve_comment_url(resp: dict, repo: RepoConfig, token: str, pr_number: in
     需要从嵌套 notes 或回查 GET 接口获取。
     """
     did = str(resp["id"])
+
+    # platform: gitee → 简洁的 #note_{id} 格式
+    if repo.platform == "gitee":
+        return f"{repo.url}/pulls/{pr_number}#note_{did}"
+
+    # platform: gitcode → 复杂的 discussion 格式
     base = f"{repo.url}/merge_requests/{pr_number}?ref=&did={did}"
 
     # 尝试从 POST 响应的嵌套 notes 中获取 numeric id
@@ -2865,7 +2885,7 @@ def post_review_comment(repo: RepoConfig, token: str, pr_number: int, pr_title: 
         f"|------|------|\n"
         f"| 标题 | {pr_title} |\n"
         f"| 作者 | {author} |\n"
-        f"| 链接 | [{repo.url}/merge_requests/{pr_number}]({repo.url}/merge_requests/{pr_number}) |\n"
+        f"| 链接 | [{repo.url}/{repo.pr_web_path}/{pr_number}]({repo.url}/{repo.pr_web_path}/{pr_number}) |\n"
         f"| 审查时间 | {now} |\n"
         f"| 审查工具 | Claude Code (`vibe-review` skill) |\n"
         f"| 基线提交 | {head_sha[:12]} |{summary_row}\n\n"
@@ -2917,7 +2937,7 @@ def _post_review_comment_quiet(
         f"|------|------|\n"
         f"| 标题 | {pr_title} |\n"
         f"| 作者 | {author} |\n"
-        f"| 链接 | [{repo.url}/merge_requests/{pr_number}]({repo.url}/merge_requests/{pr_number}) |\n"
+        f"| 链接 | [{repo.url}/{repo.pr_web_path}/{pr_number}]({repo.url}/{repo.pr_web_path}/{pr_number}) |\n"
         f"| 审查时间 | {now} |\n"
         f"| 审查工具 | Claude Code (`vibe-review` skill) |\n"
         f"| 基线提交 | {head_sha[:12]} |{summary_row}\n\n"
@@ -2972,7 +2992,7 @@ def _post_inline_comments(
             fname = get_filename(f)
             raw_diff = get_file_diff(f)
             if raw_diff:
-                file_position_maps[fname] = _build_diff_position_map(raw_diff)
+                file_position_maps[fname] = _build_diff_position_map(raw_diff, repo.platform)
 
     # 第一步：筛选可发布的 findings
     to_post: list[InlineFinding] = []
@@ -3019,19 +3039,33 @@ def _post_inline_comments(
             buf.write(f"  {_dim(f'#{finding.id} 行号修正：{finding.line}→{corrected}')}\n")
             finding.line = corrected
 
-    # 第二步：并行发布行内评论（form-encoded，position=源码行号）
+    # 第二步：并行发布行内评论
+    # platform: gitcode → form-encoded, position=源码行号
+    # platform: gitee  → JSON, position=diff块内相对行号
     def _post_one(finding: InlineFinding) -> tuple[InlineFinding, bool]:
         comment_body = (
             f"**[{finding.severity}]** {finding.title}\n\n"
             f"{finding.body}\n\n"
             f"{AI_INLINE_MARKER}"
         )
-        resp = api_post_form(
-            f"{repo.api_prefix}/pulls/{pr_number}/comments",
-            token,
-            {"body": comment_body, "commit_id": commit_id,
-             "path": finding.file, "position": finding.line},
-        )
+        # 从 position map 获取当前平台对应的 position 值
+        pos_info = file_position_maps.get(finding.file, {}).get(finding.line)
+        position = pos_info[0] if pos_info else finding.line
+
+        if repo.platform == "gitee":
+            resp = api_post(
+                f"{repo.api_prefix}/pulls/{pr_number}/comments",
+                token,
+                {"body": comment_body, "commit_id": commit_id,
+                 "path": finding.file, "position": position},
+            )
+        else:
+            resp = api_post_form(
+                f"{repo.api_prefix}/pulls/{pr_number}/comments",
+                token,
+                {"body": comment_body, "commit_id": commit_id,
+                 "path": finding.file, "position": finding.line},
+            )
         return finding, resp is not None
 
     posted_count = 0
@@ -3219,7 +3253,7 @@ def _review_single_pr(
                 fname = get_filename(f)
                 raw_diff = get_file_diff(f)
                 if raw_diff:
-                    fp_maps[fname] = _build_diff_position_map(raw_diff)
+                    fp_maps[fname] = _build_diff_position_map(raw_diff, repo.platform)
             findings = _extract_findings_for_inline(
                 review_text, files, buf, file_position_maps=fp_maps)
             if findings:
@@ -3398,23 +3432,39 @@ def main() -> None:
         _main_stats(args, explicit_repo)
         return
 
+    # 平台配置
+    platform_name = "Gitee" if cfg.platform == "gitee" else "GitCode"
+    token_env = "GITEE_TOKEN" if cfg.platform == "gitee" else "GITCODE_TOKEN"
+    token_url = "https://gitee.com/profile/personal_access_tokens" if cfg.platform == "gitee" else "https://gitcode.com -> 设置 -> 安全设置 -> 私人令牌"
+
     # 初始化仓库配置
     repo_path = REPOS_ROOT / repo_owner / repo_name
     if not repo_path.is_dir():
         print(f"  {_fail(f'本地仓库目录不存在：{repo_path}')}")
         sys.exit(1)
-    repo = RepoConfig(name=repo_name, owner=repo_owner, path=repo_path)
+    repo = RepoConfig(name=repo_name, owner=repo_owner, path=repo_path, platform=cfg.platform)
     _migrate_legacy_logs(repo)
+
+    def _get_token() -> str | None:
+        """按优先级获取平台令牌：--token > 平台专用环境变量 > 通用环境变量。"""
+        return args.token or os.environ.get(token_env) or os.environ.get("VIBE_TOKEN")
+
+    def _token_required_exit(context: str = ""):
+        """统一输出令牌缺失提示并退出。"""
+        prefix = f"{context} 需要" if context else "未提供"
+        print(f"  {_fail(f'{prefix} {platform_name} 访问令牌')}")
+        print("  请通过以下任一方式提供:")
+        print(f"    1. 环境变量：export {token_env}=your_token")
+        print("    2. 通用环境变量：export VIBE_TOKEN=your_token")
+        print("    3. 命令行：  python3 ai_reviewer.py --token your_token")
+        print(f"  获取令牌：{_dim(token_url)}")
+        sys.exit(1)
 
     if args.clean:
         # --clean 模式：只需要 token，不需要其他参数校验
-        token = args.token or os.environ.get("GITCODE_TOKEN")
+        token = _get_token()
         if not token:
-            print(f"  {_fail('未提供 GitCode 访问令牌')}")
-            print("  请通过以下任一方式提供:")
-            print("    1. 环境变量：export GITCODE_TOKEN=your_token")
-            print("    2. 命令行：  python3 ai_reviewer.py --token your_token")
-            sys.exit(1)
+            _token_required_exit()
         _main_clean(repo, args.clean, token)
         return
 
@@ -3423,10 +3473,9 @@ def main() -> None:
         return
 
     if args.track:
-        token = args.token or os.environ.get("GITCODE_TOKEN")
+        token = _get_token()
         if not token:
-            print(f"  {_fail('--track 需要 GitCode 访问令牌')}")
-            sys.exit(1)
+            _token_required_exit("--track")
         _main_track(repo, args, token)
         return
 
@@ -3441,17 +3490,12 @@ def main() -> None:
         print("  用法：python3 ai_reviewer.py --pr <number> --comment --inline")
         sys.exit(1)
 
-    # --file / --dir 模式不需要 GitCode 令牌
+    # --file / --dir 模式不需要平台令牌
     token = None
     if not args.file and not args.dir:
-        token = args.token or os.environ.get("GITCODE_TOKEN")
+        token = _get_token()
         if not token:
-            print(f"  {_fail('未提供 GitCode 访问令牌')}")
-            print("  请通过以下任一方式提供:")
-            print("    1. 环境变量：export GITCODE_TOKEN=your_token")
-            print("    2. 命令行：  python3 ai_reviewer.py --token your_token")
-            print(f"  获取令牌：{_dim('https://gitcode.com -> 设置 -> 安全设置 -> 私人令牌')}")
-            sys.exit(1)
+            _token_required_exit()
 
     # 校验 vibe-review skill
     if not args.dry_run and not SKILL_MD_PATH.exists():

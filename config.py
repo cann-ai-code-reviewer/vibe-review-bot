@@ -10,6 +10,8 @@ class AppConfig:
     owner: str = "cann"
     default_repo: str = "hcomm"
     repos_root: str = ""
+    # 平台
+    platform: str = "gitcode"
     # API
     api_base: str = "https://api.gitcode.com/api/v5"
     # 模型

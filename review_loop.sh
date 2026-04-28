@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 轻量轮询：每 60 秒检查一次 open PR 是否有新 push，有才跑 ai_reviewer.py
 # 用法：bash review_loop.sh [REPO] [TEAM_FILE] [MATCH_KEYWORD]
-# 环境变量：GITCODE_TOKEN(必需) REVIEW_INTERVAL(默认120)
+# 环境变量：GITCODE_TOKEN / GITEE_TOKEN(必需) REVIEW_INTERVAL(默认120)
 # 无变化时每轮只 1 次 API 调用，避免 ~200 次/轮的浪费
 
 set -euo pipefail
@@ -14,15 +14,25 @@ def _sh(v):
 import yaml, pathlib, os
 p = pathlib.Path(os.environ['VIBE_SCRIPT_DIR']) / 'config.yaml'
 cfg = yaml.safe_load(p.read_text()) if p.exists() else {}
+platform = cfg.get('platform', 'gitcode')
+print('CFG_PLATFORM=' + _sh(platform))
 print('CFG_OWNER=' + _sh(cfg.get('owner', 'cann')))
 print('CFG_DEFAULT_REPO=' + _sh(cfg.get('default_repo', 'hcomm')))
-print('CFG_API_BASE=' + _sh(cfg.get('api_base') or 'https://api.gitcode.com/api/v5'))
+if platform == 'gitee':
+    default_api = 'https://gitee.com/api/v5'
+    default_token_env = 'GITEE_TOKEN'
+else:
+    default_api = 'https://api.gitcode.com/api/v5'
+    default_token_env = 'GITCODE_TOKEN'
+print('CFG_API_BASE=' + _sh(cfg.get('api_base') or default_api))
 print('CFG_LOG_DIR=' + _sh(cfg.get('log_dir') or str(pathlib.Path(os.environ['VIBE_SCRIPT_DIR']) / 'log')))
 team = cfg.get('team_file') or str(pathlib.Path(os.environ['VIBE_SCRIPT_DIR']) / 'teams' / 'hccl.txt')
 print('CFG_TEAM_FILE=' + _sh(team))
+print('CFG_TOKEN_ENV=' + _sh(default_token_env))
 " 2>/dev/stderr)" || { echo "ERROR: failed to read config.yaml (is pyyaml installed?)"; exit 1; }
 OWNER="$CFG_OWNER"
-TOKEN="${GITCODE_TOKEN:?请设置环境变量 GITCODE_TOKEN}"
+TOKEN_ENV="$CFG_TOKEN_ENV"
+TOKEN="${!TOKEN_ENV:?请设置环境变量 $TOKEN_ENV}"
 INTERVAL="${REVIEW_INTERVAL:-120}"
 REPO="${1:-$CFG_DEFAULT_REPO}"
 TEAM_FILE="${2:-$CFG_TEAM_FILE}"
