@@ -69,6 +69,7 @@ import io
 import json
 import os
 import re
+import shutil
 import unicodedata
 import sqlite3
 import subprocess
@@ -3168,8 +3169,64 @@ def _review_single_pr(
         buf.write(f"  {_dim(f'[dry-run] Diff 已保存：{_file_link(diff_file)}')}\n")
         return PRResult(pr_number, pr_title, None, False, ReviewStats(), buf.getvalue())
 
-    # 拉取 PR 分支 commit（供 Claude 用 git show 读取文件，也供存活性检测使用）
-    if head_sha:
+    # 为当前 PR 创建独立 worktree，避免并行审查时的 git 竞争
+    base_ref = pr.get("base", {}).get("ref", "master")
+    wt_path = Path(f"/tmp/{repo.full_name.replace('/', '-')}-pr-{pr_number}")
+    review_cwd = repo.path
+    worktree_created = False
+
+    def _cleanup_worktree():
+        if worktree_created and wt_path.exists():
+            subprocess.run(
+                ["git", "worktree", "remove", str(wt_path)],
+                capture_output=True, cwd=str(repo.path),
+            )
+            if wt_path.exists():
+                shutil.rmtree(wt_path, ignore_errors=True)
+
+    if base_ref:
+        # 更新目标分支引用
+        subprocess.run(
+            ["git", "fetch", "origin", base_ref],
+            capture_output=True, cwd=str(repo.path), timeout=60,
+        )
+        # 清理可能残留的同名 worktree
+        if wt_path.exists():
+            shutil.rmtree(wt_path, ignore_errors=True)
+            subprocess.run(
+                ["git", "worktree", "remove", str(wt_path)],
+                capture_output=True, cwd=str(repo.path),
+            )
+        result = subprocess.run(
+            ["git", "worktree", "add", str(wt_path), f"origin/{base_ref}"],
+            capture_output=True, text=True, cwd=str(repo.path), timeout=60,
+        )
+        if result.returncode == 0:
+            worktree_created = True
+            review_cwd = wt_path
+            buf.write(f"  {_ok(f'已创建 worktree: {wt_path}')}\n")
+            if head_sha:
+                fetch_result = subprocess.run(
+                    ["git", "fetch", "origin", head_sha],
+                    capture_output=True, text=True, cwd=str(wt_path), timeout=120,
+                )
+                if fetch_result.returncode == 0:
+                    buf.write(f"  {_ok(f'已拉取 PR commit: {head_sha[:12]}')}\n")
+                    checkout_result = subprocess.run(
+                        ["git", "checkout", head_sha],
+                        capture_output=True, text=True, cwd=str(wt_path), timeout=30,
+                    )
+                    if checkout_result.returncode == 0:
+                        buf.write(f"  {_ok(f'已切换到 PR commit: {head_sha[:12]}')}\n")
+                    else:
+                        buf.write(f"  {_warn(f'切换 PR commit 失败：{checkout_result.stderr}')}\n")
+                else:
+                    buf.write(f"  {_warn(f'拉取 PR commit 失败：{fetch_result.stderr}')}\n")
+        else:
+            buf.write(f"  {_warn(f'创建 worktree 失败：{result.stderr}，回退到主仓库')}\n")
+
+    # 若 worktree 创建失败，回退到在主仓库拉取 PR commit
+    if head_sha and not worktree_created:
         fetch_result = subprocess.run(
             ["git", "fetch", "origin", head_sha],
             capture_output=True, text=True, timeout=60,
@@ -3184,7 +3241,7 @@ def _review_single_pr(
     if head_sha:
         try:
             _tracking_conn = _init_tracking_db()
-            _track_outcomes(_tracking_conn, repo.path, repo.full_name, pr_number, head_sha, log=log)
+            _track_outcomes(_tracking_conn, review_cwd, repo.full_name, pr_number, head_sha, log=log)
             _tracking_conn.close()
         except Exception:
             pass  # 追踪失败不影响主流程
@@ -3195,13 +3252,14 @@ def _review_single_pr(
     if use_inline:
         buf.write(f"  模式：行内评论 (--inline, 两步法)\n")
     t0 = time.monotonic()
-    review_text, stats = run_claude_review(diff_text, pr, repo.path, show_progress=show_progress, log=log)
+    review_text, stats = run_claude_review(diff_text, pr, review_cwd, show_progress=show_progress, log=log)
     review_secs = time.monotonic() - t0
     buf.write(f"  {_dim(f'审查耗时：{_fmt_secs(review_secs)}')}\n")
     buf.write(f"  {_dim(f'Token 消耗：{stats.fmt()}')}\n")
 
     if review_text is None:
         buf.write(f"  {_warn(f'跳过 PR #{pr_number}（审查无结果）')}\n")
+        _cleanup_worktree()
         return PRResult(pr_number, pr_title, None, False, stats, buf.getvalue(), success=False)
 
     # [追踪] 保存审查结果和 findings 到数据库
@@ -3299,6 +3357,7 @@ def _review_single_pr(
 
     pr_secs = time.monotonic() - pr_start
     buf.write(f"  {_dim(f'PR #{pr_number} 总耗时：{_fmt_secs(pr_secs)}')}\n")
+    _cleanup_worktree()
     return PRResult(pr_number, pr_title, output_file, posted, stats, buf.getvalue())
 
 

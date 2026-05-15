@@ -32,6 +32,8 @@
 
 **3/3 — npm 发包**：vibe-review skill 提取为独立项目 [vibe-review-skill](https://github.com/tsukiyokai/vibe-review-skill)，发布到 npm（[@tsukiyokai/vibe-review](https://www.npmjs.com/package/@tsukiyokai/vibe-review)）。用户通过 `npx @tsukiyokai/vibe-review --global` 一键安装。vibe-review-bot 仓库不再包含 skill 源码，改为依赖 npm 包。
 
+**5/15 — 并行审查隔离**：为每个 PR 创建独立 git worktree（`/tmp/<repo>-pr-<number>`），基于 PR 目标分支（`base_ref`）拉取最新代码后 checkout PR commit。彻底解决多 PR 并行审查时的 `git fetch` 竞争和超时问题，审查失败时自动回退到主仓库原有逻辑。
+
 ## Todos
 
 - [x] 创建 vibe-review skill，基于 CANN C++ 编码规范
@@ -50,6 +52,7 @@
 - [x] token 消耗和耗时统计（成本监控）
 - [x] 变更文件 LOC 显示(+/-)
 - [x] 多 PR 并行审查
+- [x] 并行审查隔离：每个 PR 独立 git worktree，避免 git fetch 竞争
 - [x] inline 模式：逐行评论到 GitCode 代码行
 - [x] 审查进度实时显示
 - [x] 清除指定 PR 的 AI 评论 (`--clean`)
